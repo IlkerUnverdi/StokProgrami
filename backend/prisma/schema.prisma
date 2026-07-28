@@ -1,0 +1,482 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Role {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  users User[]
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  password  String
+  createdAt DateTime @default(now())
+
+  roleId Int
+  role   Role @relation(fields: [roleId], references: [id])
+
+  stockMovements          StockMovement[]
+  sales                   Sale[]
+  currentAccountMovements CurrentAccountMovement[]
+  quotes                  Quote[]
+  purchases               Purchase[]
+  returns                 Return[]
+
+  @@index([roleId])
+}
+
+model CategoryGroup {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  categories Category[]
+}
+
+model Category {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  categoryGroupId Int
+  categoryGroup   CategoryGroup @relation(fields: [categoryGroupId], references: [id])
+
+  products Product[]
+
+  @@index([categoryGroupId])
+}
+
+model PartBrand {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  products Product[]
+}
+
+model VehicleBrand {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  variants VehicleVariant[]
+}
+
+model VehicleVariant {
+  id        Int      @id @default(autoincrement())
+  modelName String
+  engine    String
+  fuel      String?
+  yearStart Int?
+  yearEnd   Int?
+  createdAt DateTime @default(now())
+
+  vehicleBrandId Int
+  vehicleBrand   VehicleBrand @relation(fields: [vehicleBrandId], references: [id])
+
+  productCompatibilities ProductVehicleCompatibility[]
+
+  @@unique([vehicleBrandId, modelName, engine, fuel, yearStart])
+  @@index([vehicleBrandId])
+  @@index([modelName])
+}
+
+model Product {
+  id                Int      @id @default(autoincrement())
+  name              String
+  barcode           String?  @unique
+  shelfCode         String?
+  lastPurchasePrice Decimal? @db.Decimal(10, 2)
+  salePrice         Decimal? @db.Decimal(10, 2)
+  minSalePrice      Decimal? @db.Decimal(10, 2)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  imageUrl String?
+
+  categoryId Int
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  partBrandId Int
+  partBrand   PartBrand @relation(fields: [partBrandId], references: [id])
+
+  oemCodes               ProductOemCode[]
+  referenceCodes         ProductReferenceCode[]
+  vehicleCompatibilities ProductVehicleCompatibility[]
+  stockMovements         StockMovement[]
+  saleItems              SaleItem[]
+  quoteItems             QuoteItem[]
+  purchaseItems          PurchaseItem[]
+  returnItems            ReturnItem[]
+
+  equivalentsFrom ProductEquivalent[] @relation("ProductEquivalentFrom")
+  equivalentsTo   ProductEquivalent[] @relation("ProductEquivalentTo")
+
+  @@index([categoryId])
+  @@index([partBrandId])
+}
+
+model ProductOemCode {
+  id        Int      @id @default(autoincrement())
+  code      String
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  productId Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, code])
+  @@index([code])
+}
+
+model ProductReferenceCode {
+  id        Int      @id @default(autoincrement())
+  code      String
+  createdAt DateTime @default(now())
+
+  productId Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, code])
+  @@index([code])
+}
+
+model ProductEquivalent {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+
+  fromProductId Int
+  toProductId   Int
+
+  fromProduct Product @relation("ProductEquivalentFrom", fields: [fromProductId], references: [id], onDelete: Cascade)
+  toProduct   Product @relation("ProductEquivalentTo", fields: [toProductId], references: [id], onDelete: Cascade)
+
+  @@unique([fromProductId, toProductId])
+  @@index([fromProductId])
+  @@index([toProductId])
+}
+
+model ProductVehicleCompatibility {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+
+  productId        Int
+  vehicleVariantId Int
+
+  product        Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  vehicleVariant VehicleVariant @relation(fields: [vehicleVariantId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, vehicleVariantId])
+  @@index([productId])
+  @@index([vehicleVariantId])
+}
+
+enum StockMovementType {
+  IN
+  OUT
+  ADJUSTMENT
+}
+
+model StockMovement {
+  id        Int               @id @default(autoincrement())
+  type      StockMovementType
+  quantity  Int
+  note      String?
+  createdAt DateTime          @default(now())
+
+  productId Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  supplierId Int?
+  supplier   CurrentAccount? @relation(fields: [supplierId], references: [id])
+
+  @@index([productId])
+  @@index([userId])
+  @@index([supplierId])
+  @@index([type])
+}
+
+enum CurrentAccountType {
+  CUSTOMER
+  SUPPLIER
+}
+
+enum SalePaymentType {
+  CASH
+  CARD
+  TRANSFER
+  MIXED
+  ON_ACCOUNT
+}
+
+enum CurrentAccountMovementType {
+  DEBT
+  PAYMENT
+}
+
+model CurrentAccount {
+  id        Int                @id @default(autoincrement())
+  name      String
+  phone     String?
+  taxNumber String?
+  address   String?
+  type      CurrentAccountType
+  isActive  Boolean            @default(true)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  sales                   Sale[]
+  currentAccountMovements CurrentAccountMovement[]
+  quotes                  Quote[]
+  purchases               Purchase[]
+  stockMovements          StockMovement[]
+  returns                 Return[]
+
+  @@index([name])
+  @@index([type])
+}
+
+model Sale {
+  id            Int             @id @default(autoincrement())
+  saleNo        String          @unique
+  paymentType   SalePaymentType
+  subtotal      Decimal         @db.Decimal(12, 2)
+  discountTotal Decimal         @default(0) @db.Decimal(12, 2)
+  grandTotal    Decimal         @db.Decimal(12, 2)
+  note          String?
+  createdAt     DateTime        @default(now())
+  payments SalePayment[]
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  currentAccountId Int?
+  currentAccount   CurrentAccount? @relation(fields: [currentAccountId], references: [id])
+
+  items                   SaleItem[]
+  currentAccountMovements CurrentAccountMovement[]
+
+  @@index([userId])
+  @@index([currentAccountId])
+  @@index([createdAt])
+}
+
+model SaleItem {
+  id        Int      @id @default(autoincrement())
+  quantity  Int
+  unitPrice Decimal  @db.Decimal(12, 2)
+  discount  Decimal  @default(0) @db.Decimal(12, 2)
+  lineTotal Decimal  @db.Decimal(12, 2)
+  createdAt DateTime @default(now())
+
+  saleId Int
+  sale   Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@index([saleId])
+  @@index([productId])
+}
+
+model CurrentAccountMovement {
+  id        Int                        @id @default(autoincrement())
+  type      CurrentAccountMovementType
+  amount    Decimal                    @db.Decimal(12, 2)
+  note      String?
+  createdAt DateTime                   @default(now())
+  paymentMethod String?
+
+  currentAccountId Int
+  currentAccount   CurrentAccount @relation(fields: [currentAccountId], references: [id])
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  saleId Int?
+  sale   Sale? @relation(fields: [saleId], references: [id])
+
+  purchaseId Int?
+  purchase   Purchase? @relation(fields: [purchaseId], references: [id])
+
+  @@index([currentAccountId])
+  @@index([userId])
+  @@index([saleId])
+  @@index([purchaseId])
+  @@index([createdAt])
+}
+
+enum QuoteStatus {
+  ACTIVE
+  EXPIRED
+  CONVERTED
+}
+
+model Quote {
+  id            Int         @id @default(autoincrement())
+  quoteNo       String      @unique
+  status        QuoteStatus @default(ACTIVE)
+  subtotal      Decimal     @db.Decimal(12, 2)
+  discountTotal Decimal     @default(0) @db.Decimal(12, 2)
+  grandTotal    Decimal     @db.Decimal(12, 2)
+  note          String?
+  expiresAt     DateTime
+  createdAt     DateTime    @default(now())
+  convertedAt   DateTime?
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  currentAccountId Int?
+  currentAccount   CurrentAccount? @relation(fields: [currentAccountId], references: [id])
+
+  items QuoteItem[]
+
+  @@index([userId])
+  @@index([currentAccountId])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+model QuoteItem {
+  id        Int      @id @default(autoincrement())
+  quantity  Int
+  unitPrice Decimal  @db.Decimal(12, 2)
+  discount  Decimal  @default(0) @db.Decimal(12, 2)
+  lineTotal Decimal  @db.Decimal(12, 2)
+  createdAt DateTime @default(now())
+
+  quoteId Int
+  quote   Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@index([quoteId])
+  @@index([productId])
+}
+
+enum PurchasePaymentType {
+  CASH
+  TRANSFER
+  CARD
+  ON_ACCOUNT
+}
+
+model Purchase {
+  id            Int                 @id @default(autoincrement())
+  purchaseNo    String              @unique
+  paymentType   PurchasePaymentType
+  subtotal      Decimal             @db.Decimal(12, 2)
+  discountTotal Decimal             @default(0) @db.Decimal(12, 2)
+  grandTotal    Decimal             @db.Decimal(12, 2)
+  note          String?
+  createdAt     DateTime            @default(now())
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  currentAccountId Int
+  currentAccount   CurrentAccount @relation(fields: [currentAccountId], references: [id])
+
+  items                   PurchaseItem[]
+  currentAccountMovements CurrentAccountMovement[]
+
+  @@index([userId])
+  @@index([currentAccountId])
+  @@index([createdAt])
+}
+
+model PurchaseItem {
+  id        Int      @id @default(autoincrement())
+  quantity  Int
+  unitPrice Decimal  @db.Decimal(12, 2)
+  discount  Decimal  @default(0) @db.Decimal(12, 2)
+  lineTotal Decimal  @db.Decimal(12, 2)
+  createdAt DateTime @default(now())
+
+  purchaseId Int
+  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@index([purchaseId])
+  @@index([productId])
+}
+
+enum ReturnType {
+  CUSTOMER_RETURN
+  SUPPLIER_RETURN
+  DEFECTIVE_RETURN
+  WRONG_ITEM_RETURN
+}
+
+model Return {
+  id        Int        @id @default(autoincrement())
+  returnNo  String     @unique
+  type      ReturnType
+  note      String?
+  createdAt DateTime   @default(now())
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  currentAccountId Int?
+  currentAccount   CurrentAccount? @relation(fields: [currentAccountId], references: [id])
+
+  items ReturnItem[]
+
+  @@index([userId])
+  @@index([currentAccountId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model ReturnItem {
+  id        Int      @id @default(autoincrement())
+  quantity  Int
+  unitPrice Decimal? @db.Decimal(12, 2)
+  note      String?
+  createdAt DateTime @default(now())
+
+  returnId Int
+  return   Return @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@index([returnId])
+  @@index([productId])
+}
+enum SalePaymentMethod {
+  CASH
+  CARD
+  TRANSFER
+  ON_ACCOUNT
+}
+
+model SalePayment {
+  id        Int               @id @default(autoincrement())
+  method    SalePaymentMethod
+  amount    Decimal           @db.Decimal(12, 2)
+  createdAt DateTime          @default(now())
+
+  saleId Int
+  sale   Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+  @@index([method])
+}

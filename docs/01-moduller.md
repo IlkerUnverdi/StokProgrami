@@ -1,0 +1,22 @@
+# MODÜLLER
+
+- Auth
+- Kullanıcı & Roller
+- Ürün
+- OEM Kodları
+- Referans Kodları
+- Muadil Ürünler
+- Araç Uyumluluk
+- Tedarikçi
+- Müşteri / Cari
+- Mal Kabul (Satın Alma)
+- Stok Hareketleri
+- Satış
+- Teklif
+- Tahsilat
+- İade
+- Bozuk Ürün
+- Sayım
+- Kasa
+- Raporlar
+- Audit Log
