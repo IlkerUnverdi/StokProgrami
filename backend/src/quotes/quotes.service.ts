@@ -291,6 +291,7 @@ export class QuotesService {
             }`,
           );
         }
+      }
 
         const sale = await tx.sale.create({
           data: {
@@ -333,6 +334,7 @@ export class QuotesService {
             data: {
               currentAccountId: quote.currentAccountId,
               userId,
+              saleId: sale.id,
               type: 'DEBT',
               amount: quote.grandTotal,
               note: `Teklif satış dönüşümü borcu - ${quote.quoteNo}`,
@@ -363,7 +365,6 @@ export class QuotesService {
             },
           },
         });
-      }
     });
   }
 }
