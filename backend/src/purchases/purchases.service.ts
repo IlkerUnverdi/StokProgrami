@@ -10,12 +10,6 @@ import { CreatePurchaseDto } from './dto/create-purchase.dto';
 export class PurchasesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async generatePurchaseNo() {
-    const count = await this.prisma.purchase.count();
-    const next = count + 1;
-    return `ALS-${String(next).padStart(6, '0')}`;
-  }
-
   async create(userId: number, dto: CreatePurchaseDto) {
     if (!dto.items || dto.items.length === 0) {
       throw new BadRequestException('Alış kalemi boş olamaz');
@@ -25,34 +19,64 @@ export class PurchasesService {
       where: { id: dto.currentAccountId },
     });
 
-    if (!supplier) {
-      throw new NotFoundException('Tedarikçi cari bulunamadı');
+    if (!supplier || !supplier.isActive) {
+      throw new NotFoundException(
+        'Tedarikçi cari bulunamadı veya pasif',
+      );
     }
 
     if (supplier.type !== 'SUPPLIER') {
       throw new BadRequestException('Alış için cari tipi SUPPLIER olmalı');
     }
 
-    const purchaseNo = await this.generatePurchaseNo();
-
     return this.prisma.$transaction(async (tx) => {
       let subtotal = 0;
       let discountTotal = 0;
+
+      const counter = await tx.documentCounter.upsert({
+        where: { key: 'PURCHASE' },
+        create: { 
+          key: 'PURCHASE',
+          value: 1,
+        },
+        update: {
+          value: {
+            increment: 1,
+          },
+        },
+      });
+
+      const purchaseNo = `ALS-${String(counter.value).padStart(6, '0')}`;
 
       for (const item of dto.items) {
         const product = await tx.product.findUnique({
           where: { id: item.productId },
         });
 
-        if (!product) {
-          throw new NotFoundException(`Ürün bulunamadı: ${item.productId}`);
+        if (!product || !product.isActive) {
+          throw new NotFoundException(
+            `Ürün bulunamadı veya pasif: ${item.productId}`,
+          );
         }
 
         const unitPrice = Number(item.unitPrice);
         const discount = Number(item.discount ?? 0);
+        const grossLineTotal = unitPrice * item.quantity;
 
-        subtotal += unitPrice * item.quantity;
+        if (discount > grossLineTotal) {
+          throw new BadRequestException(
+            `İndirim, satır toplamını geçemez. ProductId=${item.productId}`,
+          );
+        }
+
+        subtotal += grossLineTotal;
         discountTotal += discount;
+      }
+
+      if (discountTotal > subtotal) {
+        throw new BadRequestException(
+          'Toplam indirim, toplam tutarı geçemez',
+        );
       }
 
       const grandTotal = subtotal - discountTotal;
@@ -83,6 +107,21 @@ export class PurchasesService {
             unitPrice,
             discount,
             lineTotal,
+          },
+        });
+
+        await tx.productStock.upsert({
+          where: {
+            productId: item.productId,
+          },
+          create: {
+            productId: item.productId,
+            quantity: item.quantity,
+          },
+          update: {
+            quantity: {
+              increment: item.quantity,
+            },
           },
         });
 

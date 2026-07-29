@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { 
+  BadRequestException,
+  Injectable, 
+  NotFoundException 
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCurrentAccountDto } from './dto/create-current-account.dto';
 import { CreatePaymentDto } from './dto/create-payment.dto';
@@ -159,12 +163,20 @@ async findOne(id: number) {
       throw new NotFoundException('Cari bulunamadı');
     }
 
+    if (!currentAccount.isActive) {
+      throw new BadRequestException('Cari aktif değil');
+    }
+
+    if (Number(dto.amount) <= 0) {
+      throw new BadRequestException('Ödeme miktarı sıfırdan büyük olmalıdır');
+    }
+
     return this.prisma.currentAccountMovement.create({
       data: {
         currentAccountId,
         userId,
         type: 'PAYMENT',
-        amount: dto.amount,
+        amount: Number(dto.amount),
         paymentMethod: dto.paymentMethod,
         note: dto.note,
       },

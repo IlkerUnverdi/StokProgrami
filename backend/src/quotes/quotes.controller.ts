@@ -12,13 +12,15 @@ import { QuotesService } from './quotes.service';
 import { CreateQuoteDto } from './dto/create-quote.dto';
 import { JwtGuard } from '../auth/jwt.guard';
 import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 
 @UseGuards(JwtGuard)
 @Controller('quotes')
 export class QuotesController {
   constructor(private readonly quotesService: QuotesService) {}
 
-  @UseGuards(JwtGuard, new RolesGuard(['Admin', 'Mudur', 'SatisElemani']))
+  @Roles('Admin', 'Mudur', 'SatisElemani')
+  @UseGuards(JwtGuard, RolesGuard)
   @Post()
   create(@Req() req: any, @Body() dto: CreateQuoteDto) {
     return this.quotesService.create(req.user.sub, dto);
@@ -34,12 +36,14 @@ export class QuotesController {
     return this.quotesService.findOne(id);
   }
 
-  @UseGuards(JwtGuard, new RolesGuard(['Admin', 'Mudur']))
+  @Roles('Admin', 'Mudur')
+  @UseGuards(JwtGuard, RolesGuard)
   @Post('expire/run')
   markExpiredQuotes() {
     return this.quotesService.markExpiredQuotes();
   }
-  @UseGuards(JwtGuard, new RolesGuard(['Admin', 'Mudur', 'SatisElemani']))
+  @Roles('Admin', 'Mudur', 'SatisElemani')
+  @UseGuards(JwtGuard, RolesGuard)
   @Post(':id/convert-to-sale')
   convertToSale(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
     return this.quotesService.convertToSale(id, req.user.sub);

@@ -10,12 +10,6 @@ import { CreateReturnDto } from './dto/create-return.dto';
 export class ReturnsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async generateReturnNo() {
-    const count = await this.prisma.return.count();
-    const next = count + 1;
-    return `IAD-${String(next).padStart(6, '0')}`;
-  }
-
   async create(userId: number, dto: CreateReturnDto) {
     if (!dto.items || dto.items.length === 0) {
       throw new BadRequestException('İade kalemi boş olamaz');
@@ -31,9 +25,53 @@ export class ReturnsService {
       throw new BadRequestException('Bu iade tipi için cari seçilmelidir');
     }
 
-    const returnNo = await this.generateReturnNo();
+    if (dto.currentAccountId) {
+      const currentAccount = await this.prisma.currentAccount.findUnique({
+        where: { 
+          id: dto.currentAccountId,
+        },
+      });
+
+      if (!currentAccount || !currentAccount.isActive) {
+        throw new BadRequestException('Seçilen cari bulunamadı veya pasif');
+      }
+
+      if (dto.type === 'CUSTOMER_RETURN' &&
+        currentAccount.type !== 'CUSTOMER'
+      ) {
+        throw new BadRequestException(
+          'Müşteri iadesi için müşteri carisi seçilmelidir',
+        );
+      }
+
+      if ((dto.type === 'SUPPLIER_RETURN' ||
+        dto.type === 'DEFECTIVE_RETURN' ||
+        dto.type === 'WRONG_ITEM_RETURN') &&
+        currentAccount.type !== 'SUPPLIER'
+      ) {
+        throw new BadRequestException(
+          'Tedarikçi iadesi için tedarikçi carisi seçilmelidir',
+        );
+      }
+    }
 
     return this.prisma.$transaction(async (tx) => {
+      const counter = await tx.documentCounter.upsert({
+        where: { 
+          key: 'RETURN',
+        },
+        create: {
+          key: 'RETURN',
+          value: 1,
+        },
+        update: {
+          value: {
+            increment: 1,
+          },
+        },
+      });
+
+      const returnNo = `IAD-${String(counter.value).padStart(6, '0')}`;
       const returnDoc = await tx.return.create({
         data: {
           returnNo,
@@ -49,8 +87,10 @@ export class ReturnsService {
           where: { id: item.productId },
         });
 
-        if (!product) {
-          throw new NotFoundException(`Ürün bulunamadı: ${item.productId}`);
+        if (!product || !product.isActive) {
+          throw new NotFoundException(
+            `Ürün bulunamadı veya pasif: ${item.productId}`,
+          );
         }
 
         await tx.returnItem.create({
@@ -65,6 +105,21 @@ export class ReturnsService {
 
         // Stok etkisi
         if (dto.type === 'CUSTOMER_RETURN') {
+          await tx.productStock.upsert({
+            where: {
+              productId: item.productId,
+            },
+            create: {
+              productId: item.productId,
+              quantity: item.quantity,
+            },
+            update: {
+              quantity: {
+                increment: item.quantity,
+              },
+            },
+          });
+
           await tx.stockMovement.create({
             data: {
               productId: item.productId,
@@ -79,13 +134,39 @@ export class ReturnsService {
           dto.type === 'DEFECTIVE_RETURN' ||
           dto.type === 'WRONG_ITEM_RETURN'
         ) {
+          const stockUpdate = await tx.productStock.updateMany({
+            where: {
+              productId: item.productId,
+              quantity: {
+                gte: item.quantity,
+              },
+            },
+            data: {
+              quantity: {
+                decrement: item.quantity,
+              },
+            },
+          });
+
+          if (stockUpdate.count === 0) {
+            const currentStock = await tx.productStock.findUnique({
+              where: {
+                productId: item.productId,
+              },
+            });
+
+            throw new BadRequestException(
+              `Yetersiz stok. ProductId=${item.productId}, mevcut=${currentStock?.quantity ?? 0}, istenen=${item.quantity}`,
+            );
+          }
+
           await tx.stockMovement.create({
             data: {
               productId: item.productId,
               userId,
               type: 'OUT',
               quantity: item.quantity,
-              note: `Tedarikçi/bozuk/yanlış ürün iadesi - ${returnNo}`,
+              note: `Tedarikçi iadesi - ${returnNo}`,
             },
           });
         }

@@ -101,7 +101,7 @@ model Product {
   isActive          Boolean  @default(true)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
-  imageUrl String?
+  imageUrl          String?
 
   categoryId Int
   category   Category @relation(fields: [categoryId], references: [id])
@@ -113,6 +113,7 @@ model Product {
   referenceCodes         ProductReferenceCode[]
   vehicleCompatibilities ProductVehicleCompatibility[]
   stockMovements         StockMovement[]
+  stock                  ProductStock?
   saleItems              SaleItem[]
   quoteItems             QuoteItem[]
   purchaseItems          PurchaseItem[]
@@ -186,6 +187,17 @@ enum StockMovementType {
   ADJUSTMENT
 }
 
+model ProductStock {
+  id        Int      @id @default(autoincrement())
+  quantity  Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  productId Int     @unique
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
 model StockMovement {
   id        Int               @id @default(autoincrement())
   type      StockMovementType
@@ -257,7 +269,7 @@ model Sale {
   grandTotal    Decimal         @db.Decimal(12, 2)
   note          String?
   createdAt     DateTime        @default(now())
-  payments SalePayment[]
+  payments      SalePayment[]
 
   userId Int
   user   User @relation(fields: [userId], references: [id])
@@ -292,11 +304,11 @@ model SaleItem {
 }
 
 model CurrentAccountMovement {
-  id        Int                        @id @default(autoincrement())
-  type      CurrentAccountMovementType
-  amount    Decimal                    @db.Decimal(12, 2)
-  note      String?
-  createdAt DateTime                   @default(now())
+  id            Int                        @id @default(autoincrement())
+  type          CurrentAccountMovementType
+  amount        Decimal                    @db.Decimal(12, 2)
+  note          String?
+  createdAt     DateTime                   @default(now())
   paymentMethod String?
 
   currentAccountId Int
@@ -461,6 +473,7 @@ model ReturnItem {
   @@index([returnId])
   @@index([productId])
 }
+
 enum SalePaymentMethod {
   CASH
   CARD
@@ -479,4 +492,10 @@ model SalePayment {
 
   @@index([saleId])
   @@index([method])
+}
+
+model DocumentCounter {
+  key       String   @id
+  value     Int      @default(0)
+  updatedAt DateTime @updatedAt
 }

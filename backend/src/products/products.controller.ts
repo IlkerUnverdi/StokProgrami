@@ -18,18 +18,21 @@ import { JwtGuard } from '../auth/jwt.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { AddOemCodeDto } from './dto/add-oem-code.dto';
 import { AddReferenceCodeDto } from './dto/add-reference-code.dto';
+import { Roles } from '../auth/roles.decorator';
 
 @UseGuards(JwtGuard)
 @Controller('products')
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
-  @UseGuards(JwtGuard, new RolesGuard(['Admin', 'Mudur']))
+  @Roles('Admin', 'Mudur')
+  @UseGuards(JwtGuard, RolesGuard)
   @Post()
   create(@Body() dto: CreateProductDto) {
     return this.productsService.create(dto);
   }
-  @UseGuards(JwtGuard, new RolesGuard(['Admin', 'Mudur']))
+  @Roles('Admin', 'Mudur')
+  @UseGuards(JwtGuard, RolesGuard)
   @Post(':id/oem-codes')
   addOemCode(
     @Param('id', ParseIntPipe) id: number,
@@ -38,7 +41,8 @@ export class ProductsController {
     return this.productsService.addOemCode(id, dto);
   }
 
-  @UseGuards(JwtGuard, new RolesGuard(['Admin', 'Mudur']))
+  @Roles('Admin', 'Mudur')
+  @UseGuards(JwtGuard, RolesGuard)
   @Post(':id/reference-codes')
   addReferenceCode(
     @Param('id', ParseIntPipe) id: number,
@@ -72,7 +76,8 @@ export class ProductsController {
     return this.productsService.findOne(id);
   }
 
-  @UseGuards(JwtGuard, new RolesGuard(['Admin', 'Mudur']))
+  @Roles('Admin', 'Mudur')
+  @UseGuards(JwtGuard, RolesGuard)
   @Patch(':id')
   update(
     @Param('id', ParseIntPipe) id: number,
@@ -81,7 +86,8 @@ export class ProductsController {
     return this.productsService.update(id, dto);
   }
 
-  @UseGuards(JwtGuard, new RolesGuard(['Admin', 'Mudur']))
+  @Roles('Admin', 'Mudur')
+  @UseGuards(JwtGuard, RolesGuard)
   @Post(':id/compatibilities')
   addCompatibility(
     @Param('id', ParseIntPipe) id: number,
@@ -89,7 +95,8 @@ export class ProductsController {
   ) {
     return this.productsService.addCompatibility(id, dto);
   }
-    @UseGuards(JwtGuard, new RolesGuard(['Admin', 'Mudur']))
+  @Roles('Admin', 'Mudur')
+  @UseGuards(JwtGuard, RolesGuard)
   @Patch(':id/oem-codes/:oemCodeId')
   updateOemCode(
     @Param('id', ParseIntPipe) id: number,
@@ -99,7 +106,8 @@ export class ProductsController {
     return this.productsService.updateOemCode(id, oemCodeId, dto);
   }
 
-  @UseGuards(JwtGuard, new RolesGuard(['Admin', 'Mudur']))
+  @Roles('Admin', 'Mudur')
+  @UseGuards(JwtGuard, RolesGuard)
   @Delete(':id/oem-codes/:oemCodeId')
   deleteOemCode(
     @Param('id', ParseIntPipe) id: number,
@@ -108,7 +116,8 @@ export class ProductsController {
     return this.productsService.deleteOemCode(id, oemCodeId);
   }
 
-  @UseGuards(JwtGuard, new RolesGuard(['Admin', 'Mudur']))
+  @Roles('Admin', 'Mudur')
+  @UseGuards(JwtGuard, RolesGuard)
   @Patch(':id/reference-codes/:referenceCodeId')
   updateReferenceCode(
     @Param('id', ParseIntPipe) id: number,
@@ -118,7 +127,8 @@ export class ProductsController {
     return this.productsService.updateReferenceCode(id, referenceCodeId, dto);
   }
 
-  @UseGuards(JwtGuard, new RolesGuard(['Admin', 'Mudur']))
+  @Roles('Admin', 'Mudur')
+  @UseGuards(JwtGuard, RolesGuard)
   @Delete(':id/reference-codes/:referenceCodeId')
   deleteReferenceCode(
     @Param('id', ParseIntPipe) id: number,
@@ -127,7 +137,8 @@ export class ProductsController {
     return this.productsService.deleteReferenceCode(id, referenceCodeId);
   }
 
-  @UseGuards(JwtGuard, new RolesGuard(['Admin', 'Mudur']))
+  @Roles('Admin', 'Mudur')
+  @UseGuards(JwtGuard, RolesGuard)
   @Delete(':id/compatibilities/:compatibilityId')
   deleteCompatibility(
     @Param('id', ParseIntPipe) id: number,

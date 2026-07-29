@@ -15,6 +15,7 @@ import { CreatePaymentDto } from './dto/create-payment.dto';
 import { JwtGuard } from '../auth/jwt.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { UpdateCurrentAccountDto } from './dto/update-current-account.dto';
+import { Roles } from '../auth/roles.decorator';
 
 @UseGuards(JwtGuard)
 @Controller('current-accounts')
@@ -23,7 +24,8 @@ export class CurrentAccountsController {
     private readonly currentAccountsService: CurrentAccountsService,
   ) {}
 
-  @UseGuards(JwtGuard, new RolesGuard(['Admin', 'Mudur']))
+  @Roles('Admin', 'Mudur')
+  @UseGuards(JwtGuard, RolesGuard)
   @Post()
   create(@Body() dto: CreateCurrentAccountDto) {
     return this.currentAccountsService.create(dto);
@@ -43,7 +45,8 @@ export class CurrentAccountsController {
   getBalance(@Param('id', ParseIntPipe) id: number) {
     return this.currentAccountsService.getBalance(id);
   }
-  @UseGuards(JwtGuard, new RolesGuard(['Admin', 'Mudur']))
+  @Roles('Admin', 'Mudur')
+  @UseGuards(JwtGuard, RolesGuard)
   @Patch(':id')
   update(
     @Param('id', ParseIntPipe) id: number,
@@ -52,7 +55,8 @@ export class CurrentAccountsController {
     return this.currentAccountsService.update(id, dto);
   }
 
-  @UseGuards(JwtGuard, new RolesGuard(['Admin', 'Mudur', 'Kasa']))
+  @Roles('Admin', 'Mudur', 'Kasa')
+  @UseGuards(JwtGuard, RolesGuard)
   @Post(':id/payments')
   createPayment(
     @Param('id', ParseIntPipe) id: number,

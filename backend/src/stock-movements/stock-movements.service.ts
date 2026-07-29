@@ -12,60 +12,66 @@ export class StockMovementsService {
 
   async create(dto: CreateStockMovementDto, userId = 1) {
     const product = await this.prisma.product.findUnique({
-      where: { id: dto.productId },
-      include: {
-        stockMovements: {
-          select: {
-            type: true,
-            quantity: true,
-          },
-        },
+      where: {
+        id: dto.productId,
       },
     });
 
-    if (!product) {
-      throw new NotFoundException('Ürün bulunamadı');
+    if (!product || !product.isActive) {
+      throw new NotFoundException('Ürün bulunamadı veya pasif');
     }
-
-    const currentStock = product.stockMovements.reduce((total, movement) => {
-      if (movement.type === 'IN') return total + movement.quantity;
-      if (movement.type === 'OUT') return total - movement.quantity;
-      return total + movement.quantity;
-    }, 0);
 
     if (dto.quantity <= 0) {
       throw new BadRequestException('Adet 0 veya negatif olamaz.');
     }
 
-    if (dto.type === 'OUT' && currentStock < dto.quantity) {
-      throw new BadRequestException('Yetersiz stok.');
-    }
-
     if (dto.type === 'IN') {
       if (!dto.supplierId) {
-        throw new BadRequestException('Stok girişi için tedarikçi seçilmelidir.');
+        throw new BadRequestException(
+          'Stok girişi için tedarikçi seçilmelidir.',
+        );
       }
 
       const supplierId = dto.supplierId;
 
       const supplier = await this.prisma.currentAccount.findUnique({
-        where: { id: supplierId },
+        where: {
+          id: supplierId,
+        },
       });
 
       if (!supplier || supplier.type !== 'SUPPLIER' || !supplier.isActive) {
-        throw new BadRequestException('Geçerli bir aktif tedarikçi seçilmelidir.');
+        throw new BadRequestException(
+          'Geçerli bir aktif tedarikçi seçilmelidir.',
+        );
       }
 
       if (!dto.unitCost || Number(dto.unitCost) <= 0) {
-        throw new BadRequestException('Stok girişi için birim alış fiyatı zorunludur.');
+        throw new BadRequestException(
+          'Stok girişi için birim alış fiyatı zorunludur.',
+        );
       }
 
       const unitCost = Number(dto.unitCost);
       const lineTotal = unitCost * dto.quantity;
 
       return this.prisma.$transaction(async (tx) => {
-        const purchaseCount = await tx.purchase.count();
-        const purchaseNo = `ALS-${String(purchaseCount + 1).padStart(6, '0')}`;
+        const counter = await tx.documentCounter.upsert({
+          where: {
+            key: 'PURCHASE',
+          },
+          create: {
+            key: 'PURCHASE',
+            value: 1,
+          },
+          update: {
+            value: {
+              increment: 1,
+            },
+          },
+        });
+
+        const purchaseNo = `ALS-${String(counter.value).padStart(6, '0')}`;
 
         const purchase = await tx.purchase.create({
           data: {
@@ -117,19 +123,34 @@ export class StockMovementsService {
           },
         });
 
+        await tx.productStock.upsert({
+          where: {
+            productId: dto.productId,
+          },
+          create: {
+            productId: dto.productId,
+            quantity: dto.quantity,
+          },
+          update: {
+            quantity: {
+              increment: dto.quantity,
+            },
+          },
+        });
+
         return tx.stockMovement.create({
           data: {
             productId: dto.productId,
             userId,
             supplierId,
-            type: dto.type,
+            type: 'IN',
             quantity: dto.quantity,
             note: [
               `Alış girişi - ${purchase.purchaseNo}`,
               `Tedarikçi: ${supplier.name}`,
               `Alış No: ${purchase.purchaseNo}`,
               dto.reference ? `Referans: ${dto.reference}` : null,
-              dto.unitCost ? `Birim alış: ${dto.unitCost}` : null,
+              `Birim alış: ${dto.unitCost}`,
               dto.note || null,
             ]
               .filter(Boolean)
@@ -150,31 +171,102 @@ export class StockMovementsService {
       });
     }
 
-    return this.prisma.stockMovement.create({
-      data: {
-        productId: dto.productId,
-        userId,
-        type: dto.type,
-        quantity: dto.quantity,
-        note: [
-          dto.reference ? `Referans: ${dto.reference}` : null,
-          dto.unitCost ? `Birim alış: ${dto.unitCost}` : null,
-          dto.note || null,
-        ]
-          .filter(Boolean)
-          .join(' | '),
-      },
-      include: {
-        product: {
+    if (dto.type === 'OUT') {
+      return this.prisma.$transaction(async (tx) => {
+        const stockUpdate = await tx.productStock.updateMany({
+          where: {
+            productId: dto.productId,
+            quantity: {
+              gte: dto.quantity,
+            },
+          },
+          data: {
+            quantity: {
+              decrement: dto.quantity,
+            },
+          },
+        });
+
+        if (stockUpdate.count === 0) {
+          const currentStock = await tx.productStock.findUnique({
+            where: {
+              productId: dto.productId,
+            },
+          });
+
+          throw new BadRequestException(
+            `Yetersiz stok. ProductId=${dto.productId}, mevcut=${currentStock?.quantity ?? 0}, istenen=${dto.quantity}`,
+          );
+        }
+
+        return tx.stockMovement.create({
+          data: {
+            productId: dto.productId,
+            userId,
+            type: 'OUT',
+            quantity: dto.quantity,
+            note: [
+              dto.reference ? `Referans: ${dto.reference}` : null,
+              dto.note || null,
+            ]
+              .filter(Boolean)
+              .join(' | '),
+          },
           include: {
-            partBrand: true,
-            oemCodes: true,
-            referenceCodes: true,
+            product: {
+              include: {
+                partBrand: true,
+                oemCodes: true,
+                referenceCodes: true,
+              },
+            },
+            user: true,
+          },
+        });
+      });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.productStock.upsert({
+        where: {
+          productId: dto.productId,
+        },
+        create: {
+          productId: dto.productId,
+          quantity: dto.quantity,
+        },
+        update: {
+          quantity: {
+            increment: dto.quantity,
           },
         },
-        user: true,
-        supplier: true,
-      },
+      });
+
+      return tx.stockMovement.create({
+        data: {
+          productId: dto.productId,
+          userId,
+          type: dto.type,
+          quantity: dto.quantity,
+          note: [
+            dto.reference ? `Referans: ${dto.reference}` : null,
+            dto.note || null,
+          ]
+            .filter(Boolean)
+            .join(' | '),
+        },
+        include: {
+          product: {
+            include: {
+              partBrand: true,
+              oemCodes: true,
+              referenceCodes: true,
+            },
+          },
+          user: true,
+          supplier: true,
+        },
+      });
     });
   }
 

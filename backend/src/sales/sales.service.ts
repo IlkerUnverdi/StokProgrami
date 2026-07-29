@@ -10,20 +10,36 @@ import { CreateSaleDto } from './dto/create-sale.dto';
 export class SalesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async generateSaleNo() {
-    const count = await this.prisma.sale.count();
-    const next = count + 1;
-    return `SAT-${String(next).padStart(6, '0')}`;
-  }
-
   async create(userId: number, dto: CreateSaleDto) {
     if (!dto.items || dto.items.length === 0) {
       throw new BadRequestException('Satış kalemi boş olamaz');
     }
 
-    const saleNo = await this.generateSaleNo();
+    const productIds = dto.items.map((item) => item.productId);
+    const uniqueProductIds = new Set(productIds);
+
+    if (uniqueProductIds.size !== productIds.length) {
+      throw new BadRequestException('Aynı ürün birden fazla kez eklenemez');
+    }
 
     return this.prisma.$transaction(async (tx) => {
+      const saleCounter = await tx.documentCounter.upsert({
+        where: {
+          key: 'SALE',
+        },
+        create: {
+          key: 'SALE',
+          value: 1,
+        },
+        update: {
+          value: {
+            increment: 1,
+          },
+        },
+      });
+
+      const saleNo = `SAT-${String(saleCounter.value).padStart(6, '0')}`;
+
       let subtotal = 0;
 
       for (const item of dto.items) {
@@ -33,23 +49,7 @@ export class SalesService {
 
         if (!product || !product.isActive) {
           throw new NotFoundException(
-            `Ürün bulunamadı veya pasif. ProductId=${item.productId}`,
-          );
-        }
-
-        const movements = await tx.stockMovement.findMany({
-          where: { productId: item.productId },
-        });
-
-        const stock = movements.reduce((total, movement) => {
-          if (movement.type === 'IN') return total + movement.quantity;
-          if (movement.type === 'OUT') return total - movement.quantity;
-          return total + movement.quantity;
-        }, 0);
-
-        if (stock < item.quantity) {
-          throw new BadRequestException(
-            `Yetersiz stok. ProductId=${item.productId}, mevcut=${stock}, istenen=${item.quantity}`,
+            `Ürün bulunamadı veya aktif değil. ProductId=${item.productId}`,
           );
         }
 
@@ -57,7 +57,7 @@ export class SalesService {
 
         if (product.minSalePrice && unitPrice < Number(product.minSalePrice)) {
           throw new BadRequestException(
-            `Minimum satış fiyatı altına inilemez. ProductId=${item.productId}`,
+            `Minimum satış fiyatının altında satış yapılamaz. ProductId=${item.productId}`,
           );
         }
 
@@ -74,28 +74,44 @@ export class SalesService {
         throw new BadRequestException('Ödeme toplamı satış toplamına eşit olmalı.');
       }
 
+      const activePayments = [
+        {method: 'CASH' as const, amount: cash},
+        {method: 'CARD' as const, amount: card},
+        {method: 'TRANSFER' as const, amount: transfer},
+        {method: 'ON_ACCOUNT' as const, amount: onAccount},
+      ].filter(payment => payment.amount > 0);
+
+      if (activePayments.length === 0) {
+        throw new BadRequestException('En az bir ödeme yöntemi seçilmelidir.');
+      }
+
+      const paymentType = activePayments.length === 1 ? activePayments[0].method : 'MIXED';
+
       let currentAccountId: number | null = null;
 
       if (onAccount > 0) {
-        if (!dto.currentAccountName?.trim()) {
-          throw new BadRequestException('Cari satış için cari adı girilmelidir.');
+        if (!dto.currentAccountId) {
+          throw new BadRequestException('Cari satış için cari hesap seçilmelidir.');
         }
 
-        let currentAccount = await tx.currentAccount.findFirst({
+        const currentAccount = await tx.currentAccount.findUnique({
           where: {
-            name: dto.currentAccountName.trim(),
-            type: 'CUSTOMER',
+            id: dto.currentAccountId,
           },
         });
 
         if (!currentAccount) {
-          currentAccount = await tx.currentAccount.create({
-            data: {
-              name: dto.currentAccountName.trim(),
-              type: 'CUSTOMER',
-              isActive: true,
-            },
-          });
+          throw new NotFoundException('Cari hesap bulunamadı.');
+        }
+
+        if (!currentAccount.isActive) {
+          throw new BadRequestException('Seçilen cari hesap aktif değildir.');
+        }
+
+        if (currentAccount.type !== 'CUSTOMER') {
+          throw new BadRequestException(
+            'Satış için müşteri tipinde bir cari hesap seçilmelidir.',
+          );
         }
 
         currentAccountId = currentAccount.id;
@@ -104,7 +120,7 @@ export class SalesService {
       const sale = await tx.sale.create({
         data: {
           saleNo,
-          paymentType: onAccount > 0 ? 'ON_ACCOUNT' : 'MIXED',
+          paymentType,
           subtotal,
           discountTotal: 0,
           grandTotal: subtotal,
@@ -122,9 +138,43 @@ export class SalesService {
         },
       });
 
+      await tx.salePayment.createMany({
+        data: activePayments.map((payment) => ({
+          saleId: sale.id,
+          method: payment.method,
+          amount: payment.amount,
+        })),
+      });
+
       for (const item of dto.items) {
         const unitPrice = Number(item.unitPrice);
         const lineTotal = unitPrice * item.quantity;
+
+        const stockUpdate = await tx.productStock.updateMany({
+          where: {
+            productId: item.productId,
+            quantity: {
+              gte: item.quantity,
+            },
+          },
+          data: {
+            quantity: {
+              decrement: item.quantity,
+            },
+          },
+        });
+
+        if (stockUpdate.count === 0) {
+          const currentStock = await tx.productStock.findUnique({
+            where: {
+              productId: item.productId,
+            },
+          });
+
+          throw new BadRequestException(
+            `Yetersiz stok. ProductId=${item.productId}, mevcut=${currentStock?.quantity ?? 0}, istenen=${item.quantity}`,
+          );
+        }
 
         await tx.saleItem.create({
           data: {
@@ -155,25 +205,10 @@ export class SalesService {
             userId,
             saleId: sale.id,
             type: 'DEBT',
-            amount: subtotal,
-            note: `Satış borcu - ${sale.saleNo}`,
+            amount: onAccount,
+            note: `Veresiye satış borcu - ${sale.saleNo}`,
           },
         });
-
-        const collectedAmount = cash + card + transfer;
-
-        if (collectedAmount > 0) {
-          await tx.currentAccountMovement.create({
-            data: {
-              currentAccountId,
-              userId,
-              saleId: sale.id,
-              type: 'PAYMENT',
-              amount: collectedAmount,
-              note: `Satış tahsilatı - ${sale.saleNo}`,
-            },
-          });
-        }
       }
 
       return tx.sale.findUnique({
@@ -187,6 +222,7 @@ export class SalesService {
             },
           },
           currentAccount: true,
+          payments: true,
           items: {
             include: {
               product: true,
@@ -208,6 +244,7 @@ export class SalesService {
           },
         },
         currentAccount: true,
+        payments: true,
         items: {
           include: {
             product: true,
@@ -230,6 +267,7 @@ export class SalesService {
           },
         },
         currentAccount: true,
+        payments: true,
         items: {
           include: {
             product: true,

@@ -4,30 +4,56 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import * as jwt from 'jsonwebtoken';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
+
+type AuthenticatedUser = {
+  sub: number;
+  username: string;
+  role: string;
+};
 
 @Injectable()
 export class JwtGuard implements CanActivate {
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+  ) {}
+
   canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest();
-    const authHeader = request.headers.authorization as string | undefined;
+    const request = context.switchToHttp().getRequest<{
+      headers: {
+        authorization?: string;
+      };
+      user?: AuthenticatedUser;
+    }>();
+
+    const authHeader = request.headers.authorization;
 
     if (!authHeader) {
-      throw new UnauthorizedException('Token yok');
+      throw new UnauthorizedException('Token bulunamadı.');
     }
 
     const [type, token] = authHeader.split(' ');
 
     if (type !== 'Bearer' || !token) {
-      throw new UnauthorizedException('Geçersiz token formatı');
+      throw new UnauthorizedException('Geçersiz token formatı.');
     }
 
     try {
-      const decoded = jwt.verify(token, 'supersecretkey');
-      request.user = decoded;
+      const secret =
+        this.configService.getOrThrow<string>('JWT_SECRET');
+
+      request.user =
+        this.jwtService.verify<AuthenticatedUser>(token, {
+          secret,
+        });
+
       return true;
     } catch {
-      throw new UnauthorizedException('Geçersiz token');
+      throw new UnauthorizedException(
+        'Token geçersiz veya süresi dolmuş.',
+      );
     }
   }
 }

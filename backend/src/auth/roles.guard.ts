@@ -1,26 +1,43 @@
 import {
   CanActivate,
   ExecutionContext,
-  ForbiddenException,
   Injectable,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+
+import { ROLES_KEY } from './roles.decorator';
+
+type AuthenticatedUser = {
+  sub: number;
+  username: string;
+  role: string;
+};
 
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(private readonly allowedRoles: string[]) {}
+  constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest();
-    const user = request.user as { role?: string } | undefined;
+    const requiredRoles =
+      this.reflector.getAllAndOverride<string[]>(ROLES_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]);
 
-    if (!user?.role) {
-      throw new ForbiddenException('Rol bilgisi yok');
+    if (!requiredRoles || requiredRoles.length === 0) {
+      return true;
     }
 
-    if (!this.allowedRoles.includes(user.role)) {
-      throw new ForbiddenException('Bu işlem için yetkin yok');
+    const request = context.switchToHttp().getRequest<{
+      user?: AuthenticatedUser;
+    }>();
+
+    const user = request.user;
+
+    if (!user) {
+      return false;
     }
 
-    return true;
+    return requiredRoles.includes(user.role);
   }
 }

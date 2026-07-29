@@ -1,17 +1,85 @@
+import { Type } from 'class-transformer';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsInt,
+  IsNumber,
+  IsObject,
+  IsOptional,
+  IsPositive,
+  IsString,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from 'class-validator';
+
+export class CreateSaleItemDto {
+  @IsInt()
+  @IsPositive()
+  productId: number;
+
+  @IsInt()
+  @IsPositive()
+  quantity: number;
+
+  @IsNumber({
+    maxDecimalPlaces: 2,
+  })
+  @Min(0)
+  unitPrice: number;
+}
+
+export class SalePaymentsDto {
+  @IsOptional()
+  @IsNumber({
+    maxDecimalPlaces: 2,
+  })
+  @Min(0)
+  CASH?: number;
+
+  @IsOptional()
+  @IsNumber({
+    maxDecimalPlaces: 2,
+  })
+  @Min(0)
+  CARD?: number;
+
+  @IsOptional()
+  @IsNumber({
+    maxDecimalPlaces: 2,
+  })
+  @Min(0)
+  TRANSFER?: number;
+
+  @IsOptional()
+  @IsNumber({
+    maxDecimalPlaces: 2,
+  })
+  @Min(0)
+  ON_ACCOUNT?: number;
+}
+
 export class CreateSaleDto {
-  items!: Array<{
-    productId: number;
-    quantity: number;
-    unitPrice: number;
-  }>;
+  @IsArray()
+  @ArrayMinSize(1, {
+    message: 'Satışta en az bir ürün bulunmalıdır.',
+  })
+  @ValidateNested({ each: true })
+  @Type(() => CreateSaleItemDto)
+  items: CreateSaleItemDto[];
 
-  payments!: {
-    CASH?: number;
-    CARD?: number;
-    TRANSFER?: number;
-    ON_ACCOUNT?: number;
-  };
+  @IsObject()
+  @ValidateNested()
+  @Type(() => SalePaymentsDto)
+  payments: SalePaymentsDto;
 
-  currentAccountName?: string;
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  currentAccountId?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
   note?: string;
 }

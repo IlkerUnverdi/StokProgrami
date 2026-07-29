@@ -15,9 +15,10 @@ import { PartBrandsModule } from './part-brands/part-brands.module';
 import { VehicleVariantsModule } from './vehicle-variants/vehicle-variants.module';
 import { StockMovementsModule } from './stock-movements/stock-movements.module';
 import { UsersModule } from './users/users.module';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
-  imports: [PrismaModule, AuthModule, ProductsModule, SalesModule, CurrentAccountsModule, QuotesModule, PurchasesModule, DashboardModule, ReturnsModule, CategoriesModule, PartBrandsModule, VehicleVariantsModule, StockMovementsModule, UsersModule],
+  imports: [ConfigModule.forRoot({ isGlobal: true }), PrismaModule, AuthModule, ProductsModule, SalesModule, CurrentAccountsModule, QuotesModule, PurchasesModule, DashboardModule, ReturnsModule, CategoriesModule, PartBrandsModule, VehicleVariantsModule, StockMovementsModule, UsersModule],
   controllers: [AppController],
   providers: [AppService],
 })

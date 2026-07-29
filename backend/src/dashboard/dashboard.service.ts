@@ -102,28 +102,24 @@ export class DashboardService {
       include: {
         category: true,
         partBrand: true,
-        stockMovements: true,
+        stock: {
+          select: {
+            quantity: true,
+          },
+        },
       },
       orderBy: { id: 'asc' },
     });
 
     return products
-      .map((product) => {
-        const stock = product.stockMovements.reduce((total, movement) => {
-          if (movement.type === 'IN') return total + movement.quantity;
-          if (movement.type === 'OUT') return total - movement.quantity;
-          return total + movement.quantity;
-        }, 0);
-
-        return {
-          id: product.id,
-          name: product.name,
-          barcode: product.barcode,
-          category: product.category.name,
-          partBrand: product.partBrand.name,
-          stock,
-        };
-      })
+      .map((product) => ({
+      id: product.id,
+      name: product.name,
+      barcode: product.barcode,
+      category: product.category,
+      partBrand: product.partBrand,
+      stock: product.stock?.quantity ?? 0,
+    }))
       .filter((item) => item.stock <= threshold)
       .sort((a, b) => a.stock - b.stock);
   }

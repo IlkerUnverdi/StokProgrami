@@ -1,28 +1,51 @@
-import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+
 import { AuthService } from './auth.service';
 import { JwtGuard } from './jwt.guard';
+import { LoginDto } from './login.dto';
+import { Roles } from './roles.decorator';
 import { RolesGuard } from './roles.guard';
+
+type AuthenticatedRequest = {
+  user: {
+    sub: number;
+    username: string;
+    role: string;
+  };
+};
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('login')
-  login(@Body() body: { username: string; password: string }) {
-    return this.authService.login(body.username, body.password);
+  login(@Body() body: LoginDto) {
+    return this.authService.login(
+      body.username,
+      body.password,
+    );
   }
 
   @UseGuards(JwtGuard)
   @Get('me')
-  me(@Req() req: any) {
-    return req.user;
+  me(@Req() request: AuthenticatedRequest) {
+    return request.user;
   }
-  @UseGuards(JwtGuard, new RolesGuard(['Admin']))
+
+  @Roles('Admin')
+  @UseGuards(JwtGuard, RolesGuard)
   @Get('admin-only')
-  adminOnly(@Req() req: any) {
+  adminOnly(@Req() request: AuthenticatedRequest) {
     return {
       message: 'Sadece admin girebilir',
-      user: req.user,
+      user: request.user,
     };
   }
 }

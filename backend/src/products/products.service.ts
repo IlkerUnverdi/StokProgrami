@@ -14,140 +14,133 @@ export class ProductsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async addOemCode(productId: number, dto: { code: string; isPrimary?: boolean }) {
-  const product = await this.prisma.product.findUnique({
-    where: { id: productId },
-  });
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+    });
 
-  if (!product) {
-    throw new NotFoundException('Ürün bulunamadı');
-  }
+    if (!product) {
+      throw new NotFoundException('Ürün bulunamadı');
+    }
 
-  return this.prisma.productOemCode.create({
-    data: {
-      productId,
-      code: dto.code,
-      isPrimary: dto.isPrimary ?? false,
-    },
-  });
-}
-
-async addReferenceCode(productId: number, dto: { code: string }) {
-  const product = await this.prisma.product.findUnique({
-    where: { id: productId },
-  });
-
-  if (!product) {
-    throw new NotFoundException('Ürün bulunamadı');
-  }
-
-  return this.prisma.productReferenceCode.create({
-    data: {
-      productId,
-      code: dto.code,
-    },
-  });
-}
-
-async create(dto: CreateProductDto) {
-  try {
-    const cleanedOemCodes = (dto.oemCodes ?? [])
-      .map((code) => code.trim())
-      .filter((code, index, arr) => code.length > 0 && arr.indexOf(code) === index);
-
-    const cleanedReferenceCodes = (dto.referenceCodes ?? [])
-      .map((code) => code.trim())
-      .filter((code, index, arr) => code.length > 0 && arr.indexOf(code) === index);
-
-    return await this.prisma.product.create({
+    return this.prisma.productOemCode.create({
       data: {
-        name: dto.name,
-        imageUrl: dto.imageUrl || null,
-        barcode: dto.barcode,
-        shelfCode: dto.shelfCode,
-        lastPurchasePrice: dto.lastPurchasePrice,
-        salePrice: dto.salePrice,
-        minSalePrice: dto.minSalePrice,
-        categoryId: dto.categoryId,
-        partBrandId: dto.partBrandId,
-        isActive: dto.isActive,
-
-        oemCodes: cleanedOemCodes.length
-          ? {
-              create: cleanedOemCodes.map((code, index) => ({
-                code,
-                isPrimary: index === 0,
-              })),
-            }
-          : undefined,
-
-        referenceCodes: cleanedReferenceCodes.length
-          ? {
-              create: cleanedReferenceCodes.map((code) => ({
-                code,
-              })),
-            }
-          : undefined,
+        productId,
+        code: dto.code,
+        isPrimary: dto.isPrimary ?? false,
       },
+    });
+  }
+
+  async addReferenceCode(productId: number, dto: { code: string }) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+    });
+
+    if (!product) {
+      throw new NotFoundException('Ürün bulunamadı');
+    }
+
+    return this.prisma.productReferenceCode.create({
+      data: {
+        productId,
+        code: dto.code,
+      },
+    });
+  }
+
+  async create(dto: CreateProductDto) {
+    try {
+      const cleanedOemCodes = (dto.oemCodes ?? [])
+        .map((code) => code.trim())
+        .filter((code, index, arr) => code.length > 0 && arr.indexOf(code) === index);
+
+      const cleanedReferenceCodes = (dto.referenceCodes ?? [])
+        .map((code) => code.trim())
+        .filter((code, index, arr) => code.length > 0 && arr.indexOf(code) === index);
+
+      return await this.prisma.product.create({
+        data: {
+          name: dto.name,
+          imageUrl: dto.imageUrl || null,
+          barcode: dto.barcode,
+          shelfCode: dto.shelfCode,
+          lastPurchasePrice: dto.lastPurchasePrice,
+          salePrice: dto.salePrice,
+          minSalePrice: dto.minSalePrice,
+          categoryId: dto.categoryId,
+          partBrandId: dto.partBrandId,
+          isActive: dto.isActive,
+
+          oemCodes: cleanedOemCodes.length
+            ? {
+                create: cleanedOemCodes.map((code, index) => ({
+                  code,
+                  isPrimary: index === 0,
+                })),
+              }
+            : undefined,
+
+          referenceCodes: cleanedReferenceCodes.length
+            ? {
+                create: cleanedReferenceCodes.map((code) => ({
+                  code,
+                })),
+              }
+            : undefined,
+        },
+        include: {
+          category: true,
+          partBrand: true,
+          oemCodes: true,
+          referenceCodes: true,
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new BadRequestException('Barkod, OEM veya reference kodlarından biri zaten kayıtlı.');
+      }
+
+      throw error;
+    }
+  }
+
+  async findAll() {
+    const products = await this.prisma.product.findMany({
       include: {
         category: true,
         partBrand: true,
         oemCodes: true,
         referenceCodes: true,
-      },
-    });
-  } catch (error) {
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === 'P2002'
-    ) {
-      throw new BadRequestException('Barkod, OEM veya reference kodlarından biri zaten kayıtlı.');
-    }
-
-    throw error;
-  }
-}
-
-async findAll() {
-  const products = await this.prisma.product.findMany({
-    include: {
-      category: true,
-      partBrand: true,
-      oemCodes: true,
-      referenceCodes: true,
-      vehicleCompatibilities: {
-        include: {
-          vehicleVariant: {
-            include: {
-              vehicleBrand: true,
+        vehicleCompatibilities: {
+          include: {
+            vehicleVariant: {
+              include: {
+                vehicleBrand: true,
+              },
             },
           },
         },
-      },
-      stockMovements: {
-        select: {
-          type: true,
-          quantity: true,
+        stock: {
+          select: {
+            quantity: true,
+          },
         },
       },
-    },
-    orderBy: { id: 'asc' },
-  });
+      orderBy: { id: 'asc' },
+    });
 
-  return products.map((product) => {
-    const currentStock = product.stockMovements.reduce((total, movement) => {
-      if (movement.type === 'IN') return total + movement.quantity;
-      if (movement.type === 'OUT') return total - movement.quantity;
-      return total + movement.quantity;
-    }, 0);
+    return products.map((product) => {
+      const { stock, ...productWithoutStock } = product;
 
-    const { stockMovements, ...productWithoutMovements } = product;
-
-    return {
-      ...productWithoutMovements,
-      currentStock,
-    };
-  });
-}
+      return {
+        ...productWithoutStock,
+        currentStock: stock?.quantity ?? 0,
+      };
+    });
+  }
 
   async getPurchaseHistory(productId: number) {
     const product = await this.prisma.product.findUnique({
@@ -237,6 +230,11 @@ async findAll() {
         partBrand: true,
         oemCodes: true,
         referenceCodes: true,
+        stock: {
+          select: {
+            quantity: true,
+          },
+        },
         vehicleCompatibilities: {
           include: {
             vehicleVariant: {
@@ -253,24 +251,29 @@ async findAll() {
       throw new NotFoundException('Ürün bulunamadı');
     }
 
-    return product;
+    const { stock, ...productWithoutStock } = product;
+
+    return {
+      ...productWithoutStock,
+      currentStock: stock?.quantity ?? 0,
+    };
   }
 
-  searchIdentifiers(q: string) {
-    return this.prisma.product.findMany({
+  async searchIdentifiers(q: string) {
+    const products = await this.prisma.product.findMany({
       where: {
         OR: [
           { barcode: q },
-          {
-            oemCodes: {
-              some: {
+          { 
+            oemCodes: { 
+              some: { 
                 code: q,
               },
             },
           },
-          {
-            referenceCodes: {
-              some: {
+          { 
+            referenceCodes: { 
+              some: { 
                 code: q,
               },
             },
@@ -282,6 +285,11 @@ async findAll() {
         partBrand: true,
         oemCodes: true,
         referenceCodes: true,
+        stock: {
+          select: {
+            quantity: true,
+          },
+        },
         vehicleCompatibilities: {
           include: {
             vehicleVariant: {
@@ -294,10 +302,19 @@ async findAll() {
       },
       orderBy: { id: 'asc' },
     });
+    
+    return products.map((product) => {
+      const { stock, ...productWithoutStock } = product;
+
+      return {
+        ...productWithoutStock,
+        currentStock: stock?.quantity ?? 0,
+      };
+    });
   }
 
-  searchList(q?: string) {
-    return this.prisma.product.findMany({
+  async searchList(q?: string) {
+    const products = await this.prisma.product.findMany({
       where: q
         ? {
             OR: [
@@ -325,8 +342,22 @@ async findAll() {
         partBrand: true,
         oemCodes: true,
         referenceCodes: true,
+        stock: {
+          select: {
+            quantity: true,
+          },
+        },
       },
       orderBy: { id: 'asc' },
+    });
+
+    return products.map((product) => {
+      const { stock, ...productWithoutStock } = product;
+
+      return {
+        ...productWithoutStock,
+        currentStock: stock?.quantity ?? 0,
+      };
     });
   }
 
@@ -375,7 +406,7 @@ async findAll() {
     }
   }
 
-    async updateOemCode(
+  async updateOemCode(
     productId: number,
     oemCodeId: number,
     dto: { code: string },
