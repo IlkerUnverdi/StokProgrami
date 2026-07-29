@@ -10,18 +10,20 @@ import { CreateQuoteDto } from './dto/create-quote.dto';
 export class QuotesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async generateQuoteNo() {
-    const count = await this.prisma.quote.count();
-    const next = count + 1;
-    return `TKL-${String(next).padStart(6, '0')}`;
-  }
-
   async create(userId: number, dto: CreateQuoteDto) {
     if (!dto.items || dto.items.length === 0) {
       throw new BadRequestException('Teklif kalemi boş olamaz');
     }
 
-    const quoteNo = await this.generateQuoteNo();
+    if (dto.currentAccountId) {
+      const currentAccount = await this.prisma.currentAccount.findUnique({
+        where: { id: dto.currentAccountId },
+      });
+
+      if (!currentAccount || !currentAccount.isActive) {
+        throw new BadRequestException('Geçersiz cari hesap');
+      }
+    }
 
     let subtotal = 0;
     let discountTotal = 0;
@@ -31,14 +33,27 @@ export class QuotesService {
         where: { id: item.productId },
       });
 
-      if (!product) {
-        throw new NotFoundException(`Ürün bulunamadı: ${item.productId}`);
+      if (!product || !product.isActive) {
+        throw new BadRequestException(`Geçersiz ürün: ${item.productId}`);
+      }
+
+      if (item.quantity <= 0) {
+        throw new BadRequestException(
+          `Miktar sıfırdan büyük olmalıdır: ${item.productId}`,
+        );
       }
 
       const unitPrice = Number(item.unitPrice);
       const discount = Number(item.discount ?? 0);
+      const lineSubtotal = unitPrice * item.quantity;
 
-      subtotal += unitPrice * item.quantity;
+      if (unitPrice <= 0) {
+        throw new BadRequestException(
+          `Birim fiyat sıfırdan büyük olmalıdır: ${item.productId}`,
+        );
+      }
+
+      subtotal += lineSubtotal;
       discountTotal += discount;
     }
 
@@ -48,6 +63,21 @@ export class QuotesService {
     expiresAt.setDate(expiresAt.getDate() + 3);
 
     return this.prisma.$transaction(async (tx) => {
+      const counter = await tx.documentCounter.upsert({
+        where: { key: 'QUOTE' },
+        create: {
+          key: 'QUOTE',
+          value: 1,
+        },
+        update: {
+          value: {
+            increment: 1,
+          },
+        },
+      });
+
+      const quoteNo = `TKL-${String(counter.value).padStart(6, '0')}`;
+
       const quote = await tx.quote.create({
         data: {
           quoteNo,
@@ -167,123 +197,172 @@ export class QuotesService {
     };
   }
     async convertToSale(quoteId: number, userId: number) {
-    const quote = await this.prisma.quote.findUnique({
-      where: { id: quoteId },
-      include: {
-        items: true,
-      },
-    });
-
-    if (!quote) {
-      throw new NotFoundException('Teklif bulunamadı');
-    }
-
-    if (quote.status !== 'ACTIVE') {
-      throw new BadRequestException('Sadece aktif teklifler satışa çevrilebilir');
-    }
-
-    if (quote.expiresAt < new Date()) {
-      throw new BadRequestException('Süresi geçmiş teklif satışa çevrilemez');
-    }
-
-    const saleCount = await this.prisma.sale.count();
-    const saleNo = `SAT-${String(saleCount + 1).padStart(6, '0')}`;
-
-    return this.prisma.$transaction(async (tx) => {
-      for (const item of quote.items) {
-        const movements = await tx.stockMovement.findMany({
-          where: { productId: item.productId },
+      return this.prisma.$transaction(async (tx) => {
+        const quote = await tx.quote.findUnique({
+          where: { id: quoteId },
+          include: {
+            items: true,
+            currentAccount: true,
+          },
         });
 
-        let stock = 0;
-        for (const movement of movements) {
-          if (movement.type === 'IN') stock += movement.quantity;
-          else if (movement.type === 'OUT') stock -= movement.quantity;
-          else if (movement.type === 'ADJUSTMENT') stock += movement.quantity;
+        if (!quote) {
+          throw new NotFoundException('Teklif bulunamadı');
         }
 
-        if (stock < item.quantity) {
-          throw new BadRequestException(
-            `Yetersiz stok. ProductId=${item.productId}, mevcut=${stock}, istenen=${item.quantity}`,
-          );
+        if (quote.status !== 'ACTIVE') {
+          throw new BadRequestException('Teklif geçerli değil');
         }
-      }
 
-      const sale = await tx.sale.create({
-        data: {
-          saleNo,
-          paymentType: quote.currentAccountId ? 'ON_ACCOUNT' : 'CASH',
-          subtotal: quote.subtotal,
-          discountTotal: quote.discountTotal,
-          grandTotal: quote.grandTotal,
-          note: `Tekliften dönüştürüldü: ${quote.quoteNo}`,
-          userId,
-          currentAccountId: quote.currentAccountId,
-        },
-      });
+        if (quote.expiresAt < new Date()) {
+          throw new BadRequestException('Teklif süresi dolmuş');
+        }
 
-      for (const item of quote.items) {
-        await tx.saleItem.create({
+        if (quote.currentAccount && !quote.currentAccount.isActive) {
+          throw new BadRequestException('Cari hesap aktif değil');
+        }
+
+        const statusUpdate = await tx.quote.updateMany({
+          where: {
+            id: quote.id,
+            status: 'ACTIVE',
+          },
           data: {
-            saleId: sale.id,
-            productId: item.productId,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            discount: item.discount,
-            lineTotal: item.lineTotal,
+            status: 'CONVERTED',
           },
         });
 
-        await tx.stockMovement.create({
-          data: {
-            productId: item.productId,
-            userId,
-            type: 'OUT',
-            quantity: item.quantity,
-            note: `Teklif satış dönüşümü - ${quote.quoteNo}`,
+        if (statusUpdate.count === 0) {
+          throw new BadRequestException('Teklif geçerli değil');
+        }
+
+        const counter = await tx.documentCounter.upsert({
+          where: { key: 'SALE' },
+          create: {
+            key: 'SALE',
+            value: 1,
+          },
+          update: {
+            value: {
+              increment: 1,
+            },
           },
         });
-      }
 
-      if (quote.currentAccountId) {
-        await tx.currentAccountMovement.create({
-          data: {
-            currentAccountId: quote.currentAccountId,
-            userId,
-            saleId: sale.id,
-            type: 'DEBT',
-            amount: quote.grandTotal,
-            note: `Teklif satış dönüşümü borcu - ${quote.quoteNo}`,
-          },
-        });
-      }
+        const saleNo = `SAT-${String(counter.value).padStart(6, '0')}`;
 
-      await tx.quote.update({
-        where: { id: quote.id },
-        data: {
-          status: 'CONVERTED',
-          convertedAt: new Date(),
-        },
-      });
-
-      return tx.sale.findUnique({
-        where: { id: sale.id },
-        include: {
-          user: {
+        for (const item of quote.items) {
+          const product = await tx.product.findUnique({
+            where: { id: item.productId },
             select: {
               id: true,
-              username: true,
-              role: { select: { id: true, name: true } },
+              isActive: true,
             },
-          },
-          currentAccount: true,
-          items: {
+          });
+
+          if (!product || !product.isActive) {
+            throw new BadRequestException(
+              `Ürün geçerli değil: ${item.productId}`,
+            );
+          }
+
+          const stockUpdate = await tx.productStock.updateMany({
+            where: {
+              productId: item.productId,
+              quantity: {
+                gte: item.quantity,
+              },
+            },
+            data: {
+              quantity: {
+                decrement: item.quantity,
+              },
+            },
+          });
+
+          if (stockUpdate.count === 0) {
+            const currentStock = await tx.productStock.findUnique({
+              where: { productId: item.productId },
+            });
+
+            thwrow new BadRequestException(
+              `Yeterli stok yok: ${item.productId}. Mevcut stok: ${
+                currentStock ? currentStock.quantity : 0
+              }`,
+            );
+          }
+
+          const sale = await tx.sale.create({
+            data: {
+              saleNo,
+              paymentType: quote.currentAccountId ? 'ON_ACCOUNT' : 'CASH',
+              subtotal: quote.subtotal,
+              discountTotal: quote.discountTotal,
+              grandTotal: quote.grandTotal,
+              note: `Tekliften dönüştürüldü: ${quote.quoteNo}`,
+              userId,
+              currentAccountId: quote.currentAccountId,
+            },
+          });
+
+          for (const item of quote.items) {
+            await tx.saleItem.create({
+              data: {
+                saleId: sale.id,
+                productId: item.productId,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                discount: item.discount,
+                lineTotal: item.lineTotal,
+              },
+            });
+
+            await tx.stockMovement.create({
+              data: {
+                productId: item.productId,
+                type: 'OUT',
+                quantity: item.quantity,
+                note: `Teklif satış dönüşümü - ${quote.quoteNo}`,
+              },
+            });
+          }
+
+          if (quote.currentAccountId) {
+            await tx.currentAccountMovement.create({
+              data: {
+                currentAccountId: quote.currentAccountId,
+                userId,
+                type: 'DEBT',
+                amount: quote.grandTotal,
+                note: `Teklif satış dönüşümü borcu - ${quote.quoteNo}`,
+              },
+            });
+          }
+
+          return tx.sale.findUnique({
+            where: { id: sale.id },
             include: {
-              product: true,
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                  role: {
+                    select: {
+                      id: true,
+                      name: true,
+                    },
+                  },
+                },
+              },
+              currentAccount: true,
+              items: {
+                include: {
+                  product: true,
+                },
+              },
             },
-          },
-        },
+          });
+        }
       });
-    });
-  }
+    }
 }
