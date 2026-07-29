@@ -13,7 +13,10 @@ import { AddCompatibilityDto } from './dto/add-compatibility.dto';
 export class ProductsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async addOemCode(productId: number, dto: { code: string; isPrimary?: boolean }) {
+  async addOemCode(
+    productId: number,
+    dto: { code: string; isPrimary?: boolean },
+  ) {
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
     });
@@ -52,11 +55,15 @@ export class ProductsService {
     try {
       const cleanedOemCodes = (dto.oemCodes ?? [])
         .map((code) => code.trim())
-        .filter((code, index, arr) => code.length > 0 && arr.indexOf(code) === index);
+        .filter(
+          (code, index, arr) => code.length > 0 && arr.indexOf(code) === index,
+        );
 
       const cleanedReferenceCodes = (dto.referenceCodes ?? [])
         .map((code) => code.trim())
-        .filter((code, index, arr) => code.length > 0 && arr.indexOf(code) === index);
+        .filter(
+          (code, index, arr) => code.length > 0 && arr.indexOf(code) === index,
+        );
 
       return await this.prisma.product.create({
         data: {
@@ -100,7 +107,9 @@ export class ProductsService {
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
-        throw new BadRequestException('Barkod, OEM veya reference kodlarından biri zaten kayıtlı.');
+        throw new BadRequestException(
+          'Barkod, OEM veya reference kodlarından biri zaten kayıtlı.',
+        );
       }
 
       throw error;
@@ -264,16 +273,16 @@ export class ProductsService {
       where: {
         OR: [
           { barcode: q },
-          { 
-            oemCodes: { 
-              some: { 
+          {
+            oemCodes: {
+              some: {
                 code: q,
               },
             },
           },
-          { 
-            referenceCodes: { 
-              some: { 
+          {
+            referenceCodes: {
+              some: {
                 code: q,
               },
             },
@@ -302,7 +311,7 @@ export class ProductsService {
       },
       orderBy: { id: 'asc' },
     });
-    
+
     return products.map((product) => {
       const { stock, ...productWithoutStock } = product;
 

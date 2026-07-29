@@ -113,13 +113,13 @@ export class DashboardService {
 
     return products
       .map((product) => ({
-      id: product.id,
-      name: product.name,
-      barcode: product.barcode,
-      category: product.category,
-      partBrand: product.partBrand,
-      stock: product.stock?.quantity ?? 0,
-    }))
+        id: product.id,
+        name: product.name,
+        barcode: product.barcode,
+        category: product.category,
+        partBrand: product.partBrand,
+        stock: product.stock?.quantity ?? 0,
+      }))
       .filter((item) => item.stock <= threshold)
       .sort((a, b) => a.stock - b.stock);
   }

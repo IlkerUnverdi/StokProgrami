@@ -196,173 +196,174 @@ export class QuotesService {
       updatedCount: result.count,
     };
   }
-    async convertToSale(quoteId: number, userId: number) {
-      return this.prisma.$transaction(async (tx) => {
-        const quote = await tx.quote.findUnique({
-          where: { id: quoteId },
-          include: {
-            items: true,
-            currentAccount: true,
+  async convertToSale(quoteId: number, userId: number) {
+    return this.prisma.$transaction(async (tx) => {
+      const quote = await tx.quote.findUnique({
+        where: { id: quoteId },
+        include: {
+          items: true,
+          currentAccount: true,
+        },
+      });
+
+      if (!quote) {
+        throw new NotFoundException('Teklif bulunamadı');
+      }
+
+      if (quote.status !== 'ACTIVE') {
+        throw new BadRequestException('Teklif geçerli değil');
+      }
+
+      if (quote.expiresAt < new Date()) {
+        throw new BadRequestException('Teklif süresi dolmuş');
+      }
+
+      if (quote.currentAccount && !quote.currentAccount.isActive) {
+        throw new BadRequestException('Cari hesap aktif değil');
+      }
+
+      const statusUpdate = await tx.quote.updateMany({
+        where: {
+          id: quote.id,
+          status: 'ACTIVE',
+        },
+        data: {
+          status: 'CONVERTED',
+        },
+      });
+
+      if (statusUpdate.count === 0) {
+        throw new BadRequestException('Teklif geçerli değil');
+      }
+
+      const counter = await tx.documentCounter.upsert({
+        where: { key: 'SALE' },
+        create: {
+          key: 'SALE',
+          value: 1,
+        },
+        update: {
+          value: {
+            increment: 1,
+          },
+        },
+      });
+
+      const saleNo = `SAT-${String(counter.value).padStart(6, '0')}`;
+
+      for (const item of quote.items) {
+        const product = await tx.product.findUnique({
+          where: { id: item.productId },
+          select: {
+            id: true,
+            isActive: true,
           },
         });
 
-        if (!quote) {
-          throw new NotFoundException('Teklif bulunamadı');
+        if (!product || !product.isActive) {
+          throw new BadRequestException(
+            `Ürün geçerli değil: ${item.productId}`,
+          );
         }
 
-        if (quote.status !== 'ACTIVE') {
-          throw new BadRequestException('Teklif geçerli değil');
-        }
-
-        if (quote.expiresAt < new Date()) {
-          throw new BadRequestException('Teklif süresi dolmuş');
-        }
-
-        if (quote.currentAccount && !quote.currentAccount.isActive) {
-          throw new BadRequestException('Cari hesap aktif değil');
-        }
-
-        const statusUpdate = await tx.quote.updateMany({
+        const stockUpdate = await tx.productStock.updateMany({
           where: {
-            id: quote.id,
-            status: 'ACTIVE',
+            productId: item.productId,
+            quantity: {
+              gte: item.quantity,
+            },
           },
           data: {
-            status: 'CONVERTED',
+            quantity: {
+              decrement: item.quantity,
+            },
           },
         });
 
-        if (statusUpdate.count === 0) {
-          throw new BadRequestException('Teklif geçerli değil');
+        if (stockUpdate.count === 0) {
+          const currentStock = await tx.productStock.findUnique({
+            where: { productId: item.productId },
+          });
+
+          throw new BadRequestException(
+            `Yeterli stok yok: ${item.productId}. Mevcut stok: ${
+              currentStock ? currentStock.quantity : 0
+            }`,
+          );
         }
 
-        const counter = await tx.documentCounter.upsert({
-          where: { key: 'SALE' },
-          create: {
-            key: 'SALE',
-            value: 1,
-          },
-          update: {
-            value: {
-              increment: 1,
-            },
+        const sale = await tx.sale.create({
+          data: {
+            saleNo,
+            paymentType: quote.currentAccountId ? 'ON_ACCOUNT' : 'CASH',
+            subtotal: quote.subtotal,
+            discountTotal: quote.discountTotal,
+            grandTotal: quote.grandTotal,
+            note: `Tekliften dönüştürüldü: ${quote.quoteNo}`,
+            userId,
+            currentAccountId: quote.currentAccountId,
           },
         });
 
-        const saleNo = `SAT-${String(counter.value).padStart(6, '0')}`;
-
         for (const item of quote.items) {
-          const product = await tx.product.findUnique({
-            where: { id: item.productId },
-            select: {
-              id: true,
-              isActive: true,
-            },
-          });
-
-          if (!product || !product.isActive) {
-            throw new BadRequestException(
-              `Ürün geçerli değil: ${item.productId}`,
-            );
-          }
-
-          const stockUpdate = await tx.productStock.updateMany({
-            where: {
+          await tx.saleItem.create({
+            data: {
+              saleId: sale.id,
               productId: item.productId,
-              quantity: {
-                gte: item.quantity,
-              },
-            },
-            data: {
-              quantity: {
-                decrement: item.quantity,
-              },
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              discount: item.discount,
+              lineTotal: item.lineTotal,
             },
           });
 
-          if (stockUpdate.count === 0) {
-            const currentStock = await tx.productStock.findUnique({
-              where: { productId: item.productId },
-            });
-
-            thwrow new BadRequestException(
-              `Yeterli stok yok: ${item.productId}. Mevcut stok: ${
-                currentStock ? currentStock.quantity : 0
-              }`,
-            );
-          }
-
-          const sale = await tx.sale.create({
+          await tx.stockMovement.create({
             data: {
-              saleNo,
-              paymentType: quote.currentAccountId ? 'ON_ACCOUNT' : 'CASH',
-              subtotal: quote.subtotal,
-              discountTotal: quote.discountTotal,
-              grandTotal: quote.grandTotal,
-              note: `Tekliften dönüştürüldü: ${quote.quoteNo}`,
+              productId: item.productId,
               userId,
-              currentAccountId: quote.currentAccountId,
+              type: 'OUT',
+              quantity: item.quantity,
+              note: `Teklif satış dönüşümü - ${quote.quoteNo}`,
             },
           });
+        }
 
-          for (const item of quote.items) {
-            await tx.saleItem.create({
-              data: {
-                saleId: sale.id,
-                productId: item.productId,
-                quantity: item.quantity,
-                unitPrice: item.unitPrice,
-                discount: item.discount,
-                lineTotal: item.lineTotal,
-              },
-            });
+        if (quote.currentAccountId) {
+          await tx.currentAccountMovement.create({
+            data: {
+              currentAccountId: quote.currentAccountId,
+              userId,
+              type: 'DEBT',
+              amount: quote.grandTotal,
+              note: `Teklif satış dönüşümü borcu - ${quote.quoteNo}`,
+            },
+          });
+        }
 
-            await tx.stockMovement.create({
-              data: {
-                productId: item.productId,
-                type: 'OUT',
-                quantity: item.quantity,
-                note: `Teklif satış dönüşümü - ${quote.quoteNo}`,
-              },
-            });
-          }
-
-          if (quote.currentAccountId) {
-            await tx.currentAccountMovement.create({
-              data: {
-                currentAccountId: quote.currentAccountId,
-                userId,
-                type: 'DEBT',
-                amount: quote.grandTotal,
-                note: `Teklif satış dönüşümü borcu - ${quote.quoteNo}`,
-              },
-            });
-          }
-
-          return tx.sale.findUnique({
-            where: { id: sale.id },
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  username: true,
-                  role: {
-                    select: {
-                      id: true,
-                      name: true,
-                    },
+        return tx.sale.findUnique({
+          where: { id: sale.id },
+          include: {
+            user: {
+              select: {
+                id: true,
+                username: true,
+                role: {
+                  select: {
+                    id: true,
+                    name: true,
                   },
                 },
               },
-              currentAccount: true,
-              items: {
-                include: {
-                  product: true,
-                },
+            },
+            currentAccount: true,
+            items: {
+              include: {
+                product: true,
               },
             },
-          });
-        }
-      });
-    }
+          },
+        });
+      }
+    });
+  }
 }

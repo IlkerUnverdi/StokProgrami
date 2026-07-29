@@ -1,7 +1,7 @@
-import { 
+import {
   BadRequestException,
-  Injectable, 
-  NotFoundException 
+  Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCurrentAccountDto } from './dto/create-current-account.dto';
@@ -44,82 +44,82 @@ export class CurrentAccountsService {
     });
   }
 
-async findOne(id: number) {
-  const currentAccount = await this.prisma.currentAccount.findUnique({
-    where: { id },
-    include: {
-      sales: {
-        include: {
-          items: {
-            include: {
-              product: {
-                include: {
-                  partBrand: true,
-                  oemCodes: true,
-                  referenceCodes: true,
+  async findOne(id: number) {
+    const currentAccount = await this.prisma.currentAccount.findUnique({
+      where: { id },
+      include: {
+        sales: {
+          include: {
+            items: {
+              include: {
+                product: {
+                  include: {
+                    partBrand: true,
+                    oemCodes: true,
+                    referenceCodes: true,
+                  },
                 },
               },
             },
           },
+          orderBy: { id: 'desc' },
         },
-        orderBy: { id: 'desc' },
-      },
-      currentAccountMovements: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              role: {
-                select: {
-                  id: true,
-                  name: true,
+        currentAccountMovements: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                username: true,
+                role: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
                 },
               },
             },
-          },
-          sale: {
-            include: {
-              items: {
-                include: {
-                  product: {
-                    include: {
-                      partBrand: true,
-                      oemCodes: true,
-                      referenceCodes: true,
+            sale: {
+              include: {
+                items: {
+                  include: {
+                    product: {
+                      include: {
+                        partBrand: true,
+                        oemCodes: true,
+                        referenceCodes: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            purchase: {
+              include: {
+                items: {
+                  include: {
+                    product: {
+                      include: {
+                        partBrand: true,
+                        oemCodes: true,
+                        referenceCodes: true,
+                      },
                     },
                   },
                 },
               },
             },
           },
-          purchase: {
-            include: {
-              items: {
-                include: {
-                  product: {
-                    include: {
-                      partBrand: true,
-                      oemCodes: true,
-                      referenceCodes: true,
-                    },
-                  },
-                },
-              },
-            },
-          },
+          orderBy: { id: 'desc' },
         },
-        orderBy: { id: 'desc' },
       },
-    },
-  });
+    });
 
-  if (!currentAccount) {
-    throw new NotFoundException('Cari bulunamadı');
+    if (!currentAccount) {
+      throw new NotFoundException('Cari bulunamadı');
+    }
+
+    return currentAccount;
   }
-
-  return currentAccount;
-}
 
   async getBalance(id: number) {
     const currentAccount = await this.prisma.currentAccount.findUnique({
