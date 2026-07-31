@@ -12,6 +12,7 @@ import { JwtGuard } from './jwt.guard';
   imports: [
     ConfigModule,
     JwtModule.registerAsync({
+      global: true,
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (

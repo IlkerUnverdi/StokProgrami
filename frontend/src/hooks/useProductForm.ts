@@ -23,6 +23,7 @@ export const emptyProductForm: CreateProductForm = {
   barcode: '',
   shelfCode: '',
   imageUrl: '',
+  salePrice: '',
   categoryGroupId: 0,
   categoryId: 0,
   partBrandId: 0,

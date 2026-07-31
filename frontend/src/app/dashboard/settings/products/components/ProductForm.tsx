@@ -139,6 +139,26 @@ export function ProductForm({
             />
           </div>
 
+          {mode === 'create' ? (
+            <div>
+              <label className="mb-2 block text-sm font-medium text-neutral-700">
+                Satış Fiyatı
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.salePrice ?? ''}
+                onChange={(event) =>
+                  onUpdateField('salePrice', event.target.value)
+                }
+                className="h-11 w-full rounded-xl border border-neutral-300 bg-white px-4 outline-none focus:border-red-600"
+                placeholder="0,00"
+                required
+              />
+            </div>
+          ) : null}
+
           <div>
             <label className="mb-2 block text-sm font-medium text-neutral-700">
               Ürün Resim Linki

@@ -59,6 +59,14 @@ export default function DashboardLayout({
 
             <button
               type="button"
+              onClick={() => router.push('/dashboard/returns')}
+              className="block w-full rounded-lg px-3 py-2 text-left hover:bg-neutral-800"
+            >
+              İadeler
+            </button>
+
+            <button
+              type="button"
               onClick={() => router.push('/dashboard/current-accounts')}
               className="block w-full rounded-lg px-3 py-2 text-left hover:bg-neutral-800"
             >

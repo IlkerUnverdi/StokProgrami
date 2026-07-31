@@ -60,15 +60,27 @@ export type CurrentAccountMovementPurchase = {
   items?: CurrentAccountMovementItem[];
 };
 
+export type CurrentAccountMovementReturn = {
+  returnNo: string;
+  type:
+    | 'CUSTOMER_RETURN'
+    | 'SUPPLIER_RETURN'
+    | 'DEFECTIVE_RETURN'
+    | 'WRONG_ITEM_RETURN';
+  status: 'PENDING' | 'COMPLETED' | 'CANCELLED';
+  items?: CurrentAccountMovementItem[];
+};
+
 export type CurrentAccountMovement = {
   id: number;
-  type: 'DEBT' | 'PAYMENT';
+  type: 'DEBT' | 'PAYMENT' | 'CREDIT';
   amount: string;
   paymentMethod?: PaymentMethod | null;
   note?: string | null;
   createdAt: string;
   sale?: CurrentAccountMovementSale | null;
   purchase?: CurrentAccountMovementPurchase | null;
+  returnDocument?: CurrentAccountMovementReturn | null;
   user?: {
     username: string;
   };

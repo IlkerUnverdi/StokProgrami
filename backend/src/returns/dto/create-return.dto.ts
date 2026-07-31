@@ -1,13 +1,40 @@
+import { ReturnType } from '@prisma/client';
+import { Type } from 'class-transformer';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsPositive,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
 import { CreateReturnItemDto } from './create-return-item.dto';
 
 export class CreateReturnDto {
-  type!:
-    | 'CUSTOMER_RETURN'
-    | 'SUPPLIER_RETURN'
-    | 'DEFECTIVE_RETURN'
-    | 'WRONG_ITEM_RETURN';
+  @IsEnum(ReturnType)
+  type!: ReturnType;
 
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsPositive()
   currentAccountId?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsPositive()
+  sourceSaleId?: number;
+
+  @IsOptional()
+  @IsString()
   note?: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => CreateReturnItemDto)
   items!: CreateReturnItemDto[];
 }

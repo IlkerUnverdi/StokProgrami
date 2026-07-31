@@ -71,9 +71,7 @@ export class ProductsService {
           imageUrl: dto.imageUrl || null,
           barcode: dto.barcode,
           shelfCode: dto.shelfCode,
-          lastPurchasePrice: dto.lastPurchasePrice,
           salePrice: dto.salePrice,
-          minSalePrice: dto.minSalePrice,
           categoryId: dto.categoryId,
           partBrandId: dto.partBrandId,
           isActive: dto.isActive,
@@ -135,6 +133,7 @@ export class ProductsService {
         stock: {
           select: {
             quantity: true,
+            returnPendingQuantity: true,
           },
         },
       },
@@ -147,6 +146,9 @@ export class ProductsService {
       return {
         ...productWithoutStock,
         currentStock: stock?.quantity ?? 0,
+        returnPendingStock: stock?.returnPendingQuantity ?? 0,
+        physicalStock:
+          (stock?.quantity ?? 0) + (stock?.returnPendingQuantity ?? 0),
       };
     });
   }
@@ -165,32 +167,53 @@ export class ProductsService {
       throw new NotFoundException('Ürün bulunamadı');
     }
 
-    const purchaseItems = await this.prisma.purchaseItem.findMany({
-      where: { productId },
-      include: {
-        purchase: {
-          include: {
-            currentAccount: true,
-            user: {
-              select: {
-                id: true,
-                username: true,
-                role: {
-                  select: {
-                    id: true,
-                    name: true,
+    const [purchaseItems, lastSaleItem] = await Promise.all([
+      this.prisma.purchaseItem.findMany({
+        where: { productId },
+        include: {
+          purchase: {
+            include: {
+              currentAccount: true,
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                  role: {
+                    select: {
+                      id: true,
+                      name: true,
+                    },
                   },
                 },
               },
             },
           },
         },
-      },
-      orderBy: {
-        id: 'desc',
-      },
-      take: 20,
-    });
+        orderBy: {
+          id: 'desc',
+        },
+        take: 20,
+      }),
+      this.prisma.saleItem.findFirst({
+        where: { productId },
+        select: {
+          unitPrice: true,
+          sale: {
+            select: {
+              saleNo: true,
+              createdAt: true,
+              currentAccount: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      }),
+    ]);
 
     const totalQuantity = purchaseItems.reduce(
       (sum, item) => sum + item.quantity,
@@ -220,6 +243,10 @@ export class ProductsService {
         lastPurchasePrice: lastPurchase ? Number(lastPurchase.unitPrice) : null,
         lastPurchaseDate: lastPurchase?.purchase?.createdAt ?? null,
         lastSupplierName: lastPurchase?.purchase?.currentAccount?.name ?? null,
+        lastSalePrice: lastSaleItem ? Number(lastSaleItem.unitPrice) : null,
+        lastSaleDate: lastSaleItem?.sale.createdAt ?? null,
+        lastCustomerName: lastSaleItem?.sale.currentAccount?.name ?? null,
+        lastSaleNo: lastSaleItem?.sale.saleNo ?? null,
       },
       purchases: purchaseItems.map((item) => ({
         id: item.id,
@@ -242,6 +269,7 @@ export class ProductsService {
         stock: {
           select: {
             quantity: true,
+            returnPendingQuantity: true,
           },
         },
         vehicleCompatibilities: {
@@ -265,6 +293,9 @@ export class ProductsService {
     return {
       ...productWithoutStock,
       currentStock: stock?.quantity ?? 0,
+      returnPendingStock: stock?.returnPendingQuantity ?? 0,
+      physicalStock:
+        (stock?.quantity ?? 0) + (stock?.returnPendingQuantity ?? 0),
     };
   }
 
@@ -297,6 +328,7 @@ export class ProductsService {
         stock: {
           select: {
             quantity: true,
+            returnPendingQuantity: true,
           },
         },
         vehicleCompatibilities: {
@@ -318,6 +350,9 @@ export class ProductsService {
       return {
         ...productWithoutStock,
         currentStock: stock?.quantity ?? 0,
+        returnPendingStock: stock?.returnPendingQuantity ?? 0,
+        physicalStock:
+          (stock?.quantity ?? 0) + (stock?.returnPendingQuantity ?? 0),
       };
     });
   }
@@ -354,6 +389,7 @@ export class ProductsService {
         stock: {
           select: {
             quantity: true,
+            returnPendingQuantity: true,
           },
         },
       },
@@ -366,6 +402,9 @@ export class ProductsService {
       return {
         ...productWithoutStock,
         currentStock: stock?.quantity ?? 0,
+        returnPendingStock: stock?.returnPendingQuantity ?? 0,
+        physicalStock:
+          (stock?.quantity ?? 0) + (stock?.returnPendingQuantity ?? 0),
       };
     });
   }
@@ -532,24 +571,166 @@ export class ProductsService {
   }
 
   async update(id: number, dto: UpdateProductDto) {
-    const product = await this.prisma.product.findUnique({
-      where: { id },
-    });
+    const { oemCodes, referenceCodes, vehicleVariantIds, ...productData } = dto;
+    const cleanedOemCodes = oemCodes?.map((code) => code.trim());
+    const cleanedReferenceCodes = referenceCodes?.map((code) => code.trim());
 
-    if (!product) {
-      throw new NotFoundException('Ürün bulunamadı');
+    if (cleanedOemCodes?.some((code) => code.length === 0)) {
+      throw new BadRequestException('OEM kodları boş olamaz.');
+    }
+
+    if (
+      cleanedOemCodes &&
+      new Set(cleanedOemCodes).size !== cleanedOemCodes.length
+    ) {
+      throw new BadRequestException('Aynı OEM kodu birden fazla eklenemez.');
+    }
+
+    if (cleanedReferenceCodes?.some((code) => code.length === 0)) {
+      throw new BadRequestException('Referans kodları boş olamaz.');
+    }
+
+    if (
+      cleanedReferenceCodes &&
+      new Set(cleanedReferenceCodes).size !== cleanedReferenceCodes.length
+    ) {
+      throw new BadRequestException(
+        'Aynı referans kodu birden fazla eklenemez.',
+      );
     }
 
     try {
-      return await this.prisma.product.update({
-        where: { id },
-        data: dto,
-        include: {
-          category: true,
-          partBrand: true,
-          oemCodes: true,
-          referenceCodes: true,
-        },
+      return await this.prisma.$transaction(async (tx) => {
+        const product = await tx.product.findUnique({
+          where: { id },
+        });
+
+        if (!product) {
+          throw new NotFoundException('Ürün bulunamadı');
+        }
+
+        if (productData.categoryId !== undefined) {
+          const category = await tx.category.findUnique({
+            where: { id: productData.categoryId },
+            select: { id: true },
+          });
+
+          if (!category) {
+            throw new NotFoundException('Alt kategori bulunamadı.');
+          }
+        }
+
+        if (productData.partBrandId !== undefined) {
+          const partBrand = await tx.partBrand.findUnique({
+            where: { id: productData.partBrandId },
+            select: { id: true },
+          });
+
+          if (!partBrand) {
+            throw new NotFoundException('Parça markası bulunamadı.');
+          }
+        }
+
+        if (vehicleVariantIds !== undefined && vehicleVariantIds.length > 0) {
+          const vehicleVariantCount = await tx.vehicleVariant.count({
+            where: {
+              id: {
+                in: vehicleVariantIds,
+              },
+            },
+          });
+
+          if (vehicleVariantCount !== vehicleVariantIds.length) {
+            throw new BadRequestException(
+              'Seçilen araç varyantlarından biri bulunamadı.',
+            );
+          }
+        }
+
+        await tx.product.update({
+          where: { id },
+          data: {
+            ...productData,
+            name: productData.name?.trim(),
+            imageUrl:
+              productData.imageUrl !== undefined
+                ? productData.imageUrl.trim() || null
+                : undefined,
+            barcode: productData.barcode?.trim(),
+            shelfCode: productData.shelfCode?.trim(),
+          },
+        });
+
+        if (cleanedOemCodes !== undefined) {
+          await tx.productOemCode.deleteMany({
+            where: { productId: id },
+          });
+
+          if (cleanedOemCodes.length > 0) {
+            await tx.productOemCode.createMany({
+              data: cleanedOemCodes.map((code, index) => ({
+                productId: id,
+                code,
+                isPrimary: index === 0,
+              })),
+            });
+          }
+        }
+
+        if (cleanedReferenceCodes !== undefined) {
+          await tx.productReferenceCode.deleteMany({
+            where: { productId: id },
+          });
+
+          if (cleanedReferenceCodes.length > 0) {
+            await tx.productReferenceCode.createMany({
+              data: cleanedReferenceCodes.map((code) => ({
+                productId: id,
+                code,
+              })),
+            });
+          }
+        }
+
+        if (vehicleVariantIds !== undefined) {
+          await tx.productVehicleCompatibility.deleteMany({
+            where: { productId: id },
+          });
+
+          if (vehicleVariantIds.length > 0) {
+            await tx.productVehicleCompatibility.createMany({
+              data: vehicleVariantIds.map((vehicleVariantId) => ({
+                productId: id,
+                vehicleVariantId,
+              })),
+            });
+          }
+        }
+
+        return tx.product.findUnique({
+          where: { id },
+          include: {
+            category: true,
+            partBrand: true,
+            oemCodes: true,
+            referenceCodes: true,
+            vehicleCompatibilities: {
+              include: {
+                vehicleVariant: {
+                  include: {
+                    vehicleBrand: true,
+                  },
+                },
+              },
+            },
+            stock: {
+              select: {
+                quantity: true,
+                returnPendingQuantity: true,
+              },
+            },
+          },
+        });
       });
     } catch (error) {
       if (

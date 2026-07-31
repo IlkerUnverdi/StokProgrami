@@ -6,6 +6,8 @@ export type ProductListItem = {
   barcode?: string | null;
   imageUrl?: string | null;
   currentStock?: number;
+  returnPendingStock?: number;
+  physicalStock?: number;
   categoryId?: number;
   salePrice?: string | number | null;
   purchasePrice?: string | number | null;
@@ -53,6 +55,7 @@ export type CreateProductForm = {
   imageUrl?: string;
   barcode: string;
   shelfCode: string;
+  salePrice?: string;
   isActive: boolean;
   categoryGroupId: number;
   categoryId: number;

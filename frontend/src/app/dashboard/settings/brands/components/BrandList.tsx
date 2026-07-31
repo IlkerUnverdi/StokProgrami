@@ -51,7 +51,8 @@ export function BrandList({
           </div>
         ) : (
           brands.map((brand) => {
-            const productCount = brand.products?.length ?? 0;
+            const productCount =
+              brand.productCount ?? brand.products?.length ?? 0;
 
             return (
               <div

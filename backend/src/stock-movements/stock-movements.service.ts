@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { generateDocumentNumber } from '../common/document-number';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateStockMovementDto } from './dto/create-stock-movement.dto';
 
@@ -10,7 +11,7 @@ import { CreateStockMovementDto } from './dto/create-stock-movement.dto';
 export class StockMovementsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(dto: CreateStockMovementDto, userId = 1) {
+  async create(dto: CreateStockMovementDto, userId: number) {
     const product = await this.prisma.product.findUnique({
       where: {
         id: dto.productId,
@@ -21,8 +22,12 @@ export class StockMovementsService {
       throw new NotFoundException('Ürün bulunamadı veya pasif');
     }
 
-    if (dto.quantity <= 0) {
-      throw new BadRequestException('Adet 0 veya negatif olamaz.');
+    if (dto.quantity < 0) {
+      throw new BadRequestException('Adet negatif olamaz.');
+    }
+
+    if (dto.type !== 'ADJUSTMENT' && dto.quantity === 0) {
+      throw new BadRequestException('Stok giriş ve çıkış adedi sıfır olamaz.');
     }
 
     if (dto.type === 'IN') {
@@ -56,22 +61,7 @@ export class StockMovementsService {
       const lineTotal = unitCost * dto.quantity;
 
       return this.prisma.$transaction(async (tx) => {
-        const counter = await tx.documentCounter.upsert({
-          where: {
-            key: 'PURCHASE',
-          },
-          create: {
-            key: 'PURCHASE',
-            value: 1,
-          },
-          update: {
-            value: {
-              increment: 1,
-            },
-          },
-        });
-
-        const purchaseNo = `ALS-${String(counter.value).padStart(6, '0')}`;
+        const purchaseNo = await generateDocumentNumber(tx, 'PURCHASE');
 
         const purchase = await tx.purchase.create({
           data: {
@@ -138,6 +128,15 @@ export class StockMovementsService {
           },
         });
 
+        await tx.product.update({
+          where: {
+            id: dto.productId,
+          },
+          data: {
+            lastPurchasePrice: unitCost,
+          },
+        });
+
         return tx.stockMovement.create({
           data: {
             productId: dto.productId,
@@ -164,7 +163,12 @@ export class StockMovementsService {
                 referenceCodes: true,
               },
             },
-            user: true,
+            user: {
+              select: {
+                id: true,
+                username: true,
+              },
+            },
             supplier: true,
           },
         });
@@ -220,7 +224,12 @@ export class StockMovementsService {
                 referenceCodes: true,
               },
             },
-            user: true,
+            user: {
+              select: {
+                id: true,
+                username: true,
+              },
+            },
           },
         });
       });
@@ -236,9 +245,7 @@ export class StockMovementsService {
           quantity: dto.quantity,
         },
         update: {
-          quantity: {
-            increment: dto.quantity,
-          },
+          quantity: dto.quantity,
         },
       });
 
@@ -263,7 +270,12 @@ export class StockMovementsService {
               referenceCodes: true,
             },
           },
-          user: true,
+          user: {
+            select: {
+              id: true,
+              username: true,
+            },
+          },
           supplier: true,
         },
       });
@@ -280,7 +292,12 @@ export class StockMovementsService {
             referenceCodes: true,
           },
         },
-        user: true,
+        user: {
+          select: {
+            id: true,
+            username: true,
+          },
+        },
         supplier: true,
       },
       orderBy: { id: 'desc' },

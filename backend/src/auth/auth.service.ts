@@ -16,14 +16,14 @@ export class AuthService {
       include: { role: true },
     });
 
-    if (!user) {
-      throw new UnauthorizedException('Kullanıcı bulunamadı');
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('Kullanıcı adı veya şifre hatalı');
     }
 
     const match = await bcrypt.compare(password, user.password);
 
     if (!match) {
-      throw new UnauthorizedException('Şifre yanlış');
+      throw new UnauthorizedException('Kullanıcı adı veya şifre hatalı');
     }
 
     const payload = {

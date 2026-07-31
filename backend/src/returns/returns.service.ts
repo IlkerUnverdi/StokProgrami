@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { generateDocumentNumber } from '../common/document-number';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReturnDto } from './dto/create-return.dto';
 
@@ -11,24 +12,25 @@ export class ReturnsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(userId: number, dto: CreateReturnDto) {
-    if (!dto.items || dto.items.length === 0) {
-      throw new BadRequestException('İade kalemi boş olamaz');
+    const productIds = dto.items.map((item) => item.productId);
+
+    if (new Set(productIds).size !== productIds.length) {
+      throw new BadRequestException(
+        'Aynı ürün iadeye birden fazla kez eklenemez',
+      );
     }
 
-    if (
-      (dto.type === 'CUSTOMER_RETURN' ||
-        dto.type === 'SUPPLIER_RETURN' ||
-        dto.type === 'DEFECTIVE_RETURN' ||
-        dto.type === 'WRONG_ITEM_RETURN') &&
-      !dto.currentAccountId
-    ) {
+    const currentAccountId = dto.currentAccountId;
+    const sourceSaleId = dto.sourceSaleId;
+
+    if (!currentAccountId) {
       throw new BadRequestException('Bu iade tipi için cari seçilmelidir');
     }
 
-    if (dto.currentAccountId) {
-      const currentAccount = await this.prisma.currentAccount.findUnique({
-        where: { 
-          id: dto.currentAccountId,
+    return this.prisma.$transaction(async (tx) => {
+      const currentAccount = await tx.currentAccount.findUnique({
+        where: {
+          id: currentAccountId,
         },
       });
 
@@ -36,51 +38,90 @@ export class ReturnsService {
         throw new BadRequestException('Seçilen cari bulunamadı veya pasif');
       }
 
-      if (dto.type === 'CUSTOMER_RETURN' &&
-        currentAccount.type !== 'CUSTOMER'
-      ) {
+      const isCustomerReturn = dto.type === 'CUSTOMER_RETURN';
+
+      if (isCustomerReturn && currentAccount.type !== 'CUSTOMER') {
         throw new BadRequestException(
           'Müşteri iadesi için müşteri carisi seçilmelidir',
         );
       }
 
-      if ((dto.type === 'SUPPLIER_RETURN' ||
-        dto.type === 'DEFECTIVE_RETURN' ||
-        dto.type === 'WRONG_ITEM_RETURN') &&
-        currentAccount.type !== 'SUPPLIER'
-      ) {
+      if (!isCustomerReturn && currentAccount.type !== 'SUPPLIER') {
         throw new BadRequestException(
           'Tedarikçi iadesi için tedarikçi carisi seçilmelidir',
         );
       }
-    }
 
-    return this.prisma.$transaction(async (tx) => {
-      const counter = await tx.documentCounter.upsert({
-        where: { 
-          key: 'RETURN',
-        },
-        create: {
-          key: 'RETURN',
-          value: 1,
-        },
-        update: {
-          value: {
-            increment: 1,
-          },
-        },
-      });
+      if (isCustomerReturn && !sourceSaleId) {
+        throw new BadRequestException(
+          'Müşteri iadesi için kaynak satış seçilmelidir',
+        );
+      }
 
-      const returnNo = `IAD-${String(counter.value).padStart(6, '0')}`;
+      const sourceSale =
+        isCustomerReturn && sourceSaleId
+          ? await tx.sale.findUnique({
+              where: {
+                id: sourceSaleId,
+              },
+              include: {
+                items: true,
+              },
+            })
+          : null;
+
+      if (
+        isCustomerReturn &&
+        (!sourceSale || sourceSale.currentAccountId !== currentAccountId)
+      ) {
+        throw new BadRequestException(
+          'Seçilen satış bu müşteriye ait değil veya bulunamadı',
+        );
+      }
+
+      const previousReturnQuantities =
+        isCustomerReturn && sourceSale
+          ? await tx.returnItem.groupBy({
+              by: ['productId'],
+              where: {
+                productId: {
+                  in: productIds,
+                },
+                return: {
+                  sourceSaleId: sourceSale.id,
+                  type: 'CUSTOMER_RETURN',
+                  status: {
+                    not: 'CANCELLED',
+                  },
+                },
+              },
+              _sum: {
+                quantity: true,
+              },
+            })
+          : [];
+      const previousReturnQuantityByProductId = new Map(
+        previousReturnQuantities.map((item) => [
+          item.productId,
+          item._sum.quantity ?? 0,
+        ]),
+      );
+
+      const returnNo = await generateDocumentNumber(tx, 'RETURN');
       const returnDoc = await tx.return.create({
         data: {
           returnNo,
           type: dto.type,
-          note: dto.note,
+          status: isCustomerReturn ? 'COMPLETED' : 'PENDING',
+          note: dto.note?.trim() || null,
           userId,
-          currentAccountId: dto.currentAccountId,
+          currentAccountId,
+          sourceSaleId: sourceSale?.id,
+          completedAt: isCustomerReturn ? new Date() : null,
         },
       });
+
+      let returnTotal = 0;
 
       for (const item of dto.items) {
         const product = await tx.product.findUnique({
@@ -93,18 +134,69 @@ export class ReturnsService {
           );
         }
 
+        let unitPrice: number;
+
+        if (isCustomerReturn) {
+          const sourceSaleItem = sourceSale?.items.find(
+            (saleItem) => saleItem.productId === item.productId,
+          );
+
+          if (!sourceSaleItem) {
+            throw new BadRequestException(
+              `${product.name} seçilen satışta bulunmuyor`,
+            );
+          }
+
+          const previouslyReturned =
+            previousReturnQuantityByProductId.get(item.productId) ?? 0;
+          const returnableQuantity =
+            sourceSaleItem.quantity - previouslyReturned;
+
+          if (item.quantity > returnableQuantity) {
+            throw new BadRequestException(
+              `${product.name} için en fazla ${returnableQuantity} adet iade edilebilir`,
+            );
+          }
+
+          unitPrice = Number(sourceSaleItem.unitPrice);
+        } else {
+          const latestPurchaseItem = await tx.purchaseItem.findFirst({
+            where: {
+              productId: item.productId,
+              purchase: {
+                currentAccountId,
+              },
+            },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            select: {
+              unitPrice: true,
+            },
+          });
+
+          if (!latestPurchaseItem) {
+            throw new BadRequestException(
+              `${product.name} için seçilen tedarikçiye ait geçmiş alış kaydı bulunamadı.`,
+            );
+          }
+
+          unitPrice = Number(latestPurchaseItem.unitPrice);
+        }
+
+        const lineTotal = unitPrice * item.quantity;
+        returnTotal += lineTotal;
+
         await tx.returnItem.create({
           data: {
             returnId: returnDoc.id,
             productId: item.productId,
             quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            note: item.note,
+            unitPrice,
+            lineTotal,
+            note: item.note?.trim() || null,
           },
         });
 
-        // Stok etkisi
-        if (dto.type === 'CUSTOMER_RETURN') {
+        if (isCustomerReturn) {
           await tx.productStock.upsert({
             where: {
               productId: item.productId,
@@ -129,11 +221,7 @@ export class ReturnsService {
               note: `Müşteri iadesi - ${returnNo}`,
             },
           });
-        } else if (
-          dto.type === 'SUPPLIER_RETURN' ||
-          dto.type === 'DEFECTIVE_RETURN' ||
-          dto.type === 'WRONG_ITEM_RETURN'
-        ) {
+        } else {
           const stockUpdate = await tx.productStock.updateMany({
             where: {
               productId: item.productId,
@@ -144,6 +232,9 @@ export class ReturnsService {
             data: {
               quantity: {
                 decrement: item.quantity,
+              },
+              returnPendingQuantity: {
+                increment: item.quantity,
               },
             },
           });
@@ -159,17 +250,20 @@ export class ReturnsService {
               `Yetersiz stok. ProductId=${item.productId}, mevcut=${currentStock?.quantity ?? 0}, istenen=${item.quantity}`,
             );
           }
-
-          await tx.stockMovement.create({
-            data: {
-              productId: item.productId,
-              userId,
-              type: 'OUT',
-              quantity: item.quantity,
-              note: `Tedarikçi iadesi - ${returnNo}`,
-            },
-          });
         }
+      }
+
+      if (isCustomerReturn) {
+        await tx.currentAccountMovement.create({
+          data: {
+            currentAccountId,
+            userId,
+            returnId: returnDoc.id,
+            type: 'CREDIT',
+            amount: returnTotal,
+            note: `Müşteri iadesi mahsubu - ${returnNo}`,
+          },
+        });
       }
 
       return tx.return.findUnique({
@@ -188,6 +282,242 @@ export class ReturnsService {
             },
           },
           currentAccount: true,
+          sourceSale: {
+            select: {
+              id: true,
+              saleNo: true,
+              createdAt: true,
+            },
+          },
+          items: {
+            include: {
+              product: true,
+            },
+          },
+        },
+      });
+    });
+  }
+
+  async complete(id: number, userId: number) {
+    return this.prisma.$transaction(async (tx) => {
+      const returnDoc = await tx.return.findUnique({
+        where: { id },
+        include: {
+          currentAccount: true,
+          items: {
+            include: {
+              product: true,
+            },
+          },
+        },
+      });
+
+      if (!returnDoc) {
+        throw new NotFoundException('İade bulunamadı');
+      }
+
+      if (returnDoc.status !== 'PENDING') {
+        throw new BadRequestException(
+          'Yalnızca bekleyen iadeler tamamlanabilir.',
+        );
+      }
+
+      const supplierId = returnDoc.currentAccountId;
+
+      if (
+        !supplierId ||
+        !returnDoc.currentAccount ||
+        returnDoc.currentAccount.type !== 'SUPPLIER' ||
+        !returnDoc.currentAccount.isActive
+      ) {
+        throw new BadRequestException(
+          'İade için geçerli ve aktif bir tedarikçi bulunamadı.',
+        );
+      }
+
+      const statusUpdate = await tx.return.updateMany({
+        where: {
+          id,
+          status: 'PENDING',
+        },
+        data: {
+          status: 'COMPLETED',
+          completedAt: new Date(),
+        },
+      });
+
+      if (statusUpdate.count === 0) {
+        throw new BadRequestException('İade daha önce işleme alınmış.');
+      }
+
+      let returnTotal = 0;
+
+      for (const item of returnDoc.items) {
+        const stockUpdate = await tx.productStock.updateMany({
+          where: {
+            productId: item.productId,
+            returnPendingQuantity: {
+              gte: item.quantity,
+            },
+          },
+          data: {
+            returnPendingQuantity: {
+              decrement: item.quantity,
+            },
+          },
+        });
+
+        if (stockUpdate.count === 0) {
+          throw new BadRequestException(
+            `${item.product.name} için bekleyen iade stoğu yetersiz.`,
+          );
+        }
+
+        returnTotal += Number(item.lineTotal);
+
+        await tx.stockMovement.create({
+          data: {
+            productId: item.productId,
+            userId,
+            supplierId,
+            type: 'OUT',
+            quantity: item.quantity,
+            note: `Tedarikçiye iade - ${returnDoc.returnNo}`,
+          },
+        });
+      }
+
+      await tx.currentAccountMovement.create({
+        data: {
+          currentAccountId: supplierId,
+          userId,
+          returnId: returnDoc.id,
+          type: 'CREDIT',
+          amount: returnTotal,
+          note: `Tedarikçi iade mahsubu - ${returnDoc.returnNo}`,
+        },
+      });
+
+      return tx.return.findUnique({
+        where: { id },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              role: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+          currentAccount: true,
+          sourceSale: {
+            select: {
+              id: true,
+              saleNo: true,
+              createdAt: true,
+            },
+          },
+          items: {
+            include: {
+              product: true,
+            },
+          },
+          currentAccountMovements: true,
+        },
+      });
+    });
+  }
+
+  async cancel(id: number) {
+    return this.prisma.$transaction(async (tx) => {
+      const returnDoc = await tx.return.findUnique({
+        where: { id },
+        include: {
+          items: {
+            include: {
+              product: true,
+            },
+          },
+        },
+      });
+
+      if (!returnDoc) {
+        throw new NotFoundException('İade bulunamadı');
+      }
+
+      if (returnDoc.status !== 'PENDING') {
+        throw new BadRequestException(
+          'Yalnızca bekleyen iadeler iptal edilebilir.',
+        );
+      }
+
+      const statusUpdate = await tx.return.updateMany({
+        where: {
+          id,
+          status: 'PENDING',
+        },
+        data: {
+          status: 'CANCELLED',
+        },
+      });
+
+      if (statusUpdate.count === 0) {
+        throw new BadRequestException('İade daha önce işleme alınmış.');
+      }
+
+      for (const item of returnDoc.items) {
+        const stockUpdate = await tx.productStock.updateMany({
+          where: {
+            productId: item.productId,
+            returnPendingQuantity: {
+              gte: item.quantity,
+            },
+          },
+          data: {
+            quantity: {
+              increment: item.quantity,
+            },
+            returnPendingQuantity: {
+              decrement: item.quantity,
+            },
+          },
+        });
+
+        if (stockUpdate.count === 0) {
+          throw new BadRequestException(
+            `${item.product.name} için bekleyen iade stoğu yetersiz.`,
+          );
+        }
+      }
+
+      return tx.return.findUnique({
+        where: { id },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              role: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+          currentAccount: true,
+          sourceSale: {
+            select: {
+              id: true,
+              saleNo: true,
+              createdAt: true,
+            },
+          },
           items: {
             include: {
               product: true,
@@ -214,6 +544,13 @@ export class ReturnsService {
           },
         },
         currentAccount: true,
+        sourceSale: {
+          select: {
+            id: true,
+            saleNo: true,
+            createdAt: true,
+          },
+        },
         items: {
           include: {
             product: true,
@@ -241,6 +578,13 @@ export class ReturnsService {
           },
         },
         currentAccount: true,
+        sourceSale: {
+          select: {
+            id: true,
+            saleNo: true,
+            createdAt: true,
+          },
+        },
         items: {
           include: {
             product: true,

@@ -1,4 +1,6 @@
 // frontend/src/lib/printTemplates/currentAccountStatement.ts
+import { escapeHtml } from '@/utils/html';
+
 type SaleItem = {
   id: number;
   quantity: number;
@@ -13,13 +15,21 @@ type SaleItem = {
 
 type CurrentAccountMovementDetail = {
   id: number;
-  type: 'DEBT' | 'PAYMENT';
+  type: 'DEBT' | 'PAYMENT' | 'CREDIT';
   amount: string | number;
   paymentMethod?: 'CASH' | 'CARD' | 'TRANSFER' | null;
   note?: string | null;
   createdAt: string;
   sale?: {
     saleNo?: string;
+    items?: SaleItem[];
+  } | null;
+  purchase?: {
+    purchaseNo?: string;
+    items?: SaleItem[];
+  } | null;
+  returnDocument?: {
+    returnNo?: string;
     items?: SaleItem[];
   } | null;
 };
@@ -97,36 +107,56 @@ export function buildCurrentAccountStatementHtml(
   const statementRows = movements
     .map((movement) => {
       const sign = movement.type === 'DEBT' ? '+' : '-';
-      const label = movement.type === 'DEBT' ? 'Satış' : 'Tahsilat';
+      const label =
+        movement.type === 'CREDIT'
+          ? 'İade Mahsubu'
+          : movement.type === 'PAYMENT'
+            ? 'Tahsilat'
+            : movement.purchase
+              ? 'Alış'
+              : 'Satış';
       const amountClass = movement.type === 'DEBT' ? 'debt' : 'payment';
-      const saleItems = movement.sale?.items?.length
-        ? groupSaleItems(movement.sale.items)
+      const documentItems =
+        movement.sale?.items ??
+        movement.purchase?.items ??
+        movement.returnDocument?.items ??
+        [];
+      const groupedItems = documentItems.length
+        ? groupSaleItems(documentItems)
         : [];
 
-      const itemSummary = saleItems.length
-        ? saleItems
+      const itemSummary = groupedItems.length
+        ? groupedItems
             .map(
               (item) =>
-                `${item.quantity}x ${item.product.name}${
+                `${item.quantity}x ${escapeHtml(item.product.name)}${
                   item.product.partBrand?.name
-                    ? ` (${item.product.partBrand.name})`
+                    ? ` (${escapeHtml(item.product.partBrand.name)})`
                     : ''
                 }`,
             )
             .join('<br />')
         : movement.type === 'PAYMENT'
           ? `Ödeme yöntemi: ${getCollectionPaymentLabel(movement.paymentMethod)}${
-              movement.note ? `<br />Not: ${movement.note}` : ''
+              movement.note ? `<br />Not: ${escapeHtml(movement.note)}` : ''
             }`
-          : movement.note || '-';
+          : escapeHtml(movement.note || '-');
 
-      const itemCount = saleItems.reduce((sum, item) => sum + item.quantity, 0);
+      const itemCount = groupedItems.reduce(
+        (sum, item) => sum + item.quantity,
+        0,
+      );
+      const documentNo =
+        movement.sale?.saleNo ??
+        movement.purchase?.purchaseNo ??
+        movement.returnDocument?.returnNo ??
+        '-';
 
       return `
         <tr>
           <td>${formatDateTime(movement.createdAt)}</td>
           <td>${label}</td>
-          <td>${movement.sale?.saleNo || '-'}</td>
+          <td>${escapeHtml(documentNo)}</td>
           <td>
             <div class="movement-detail">${itemSummary}</div>
             ${itemCount > 0 ? `<div class="movement-sub">${itemCount} ürün</div>` : ''}
@@ -156,7 +186,7 @@ export function buildCurrentAccountStatementHtml(
 
         <div class="document-title">
           <div class="label">Cari Hesap Dökümü</div>
-          <div class="number">${account.name}</div>
+          <div class="number">${escapeHtml(account.name)}</div>
           <div class="date">${formatDateTime(new Date().toISOString())}</div>
         </div>
       </div>
@@ -164,8 +194,8 @@ export function buildCurrentAccountStatementHtml(
       <div class="statement-top">
         <div>
           <div class="meta-label">Cari / Müşteri</div>
-          <div class="meta-value">${account.name}</div>
-          <div class="meta-sub">${account.phone || 'Telefon bilgisi yok'}</div>
+          <div class="meta-value">${escapeHtml(account.name)}</div>
+          <div class="meta-sub">${escapeHtml(account.phone || 'Telefon bilgisi yok')}</div>
         </div>
       </div>
 
@@ -204,7 +234,7 @@ export function buildCurrentAccountStatementHtml(
 
       <div class="footer statement-footer">
         <div>Enes Otomotiv Yedek Parça</div>
-        <div>Cari: ${account.name}</div>
+        <div>Cari: ${escapeHtml(account.name)}</div>
         <div>Bu belge sistem tarafından oluşturulmuştur.</div>
       </div>
     </div>
@@ -224,7 +254,7 @@ export async function printCurrentAccountStatement(
       <head>
         <meta charSet="UTF-8" />
         <meta httpEquiv="Content-Type" content="text/html; charset=utf-8" />
-        <title>${account.name} Cari Döküm</title>
+        <title>${escapeHtml(account.name)} Cari Döküm</title>
         <style>
           ${getCurrentAccountStatementStyle()}
         </style>

@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { generateDocumentNumber } from '../common/document-number';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateQuoteDto } from './dto/create-quote.dto';
 
@@ -15,6 +16,14 @@ export class QuotesService {
       throw new BadRequestException('Teklif kalemi boş olamaz');
     }
 
+    const productIds = dto.items.map((item) => item.productId);
+
+    if (new Set(productIds).size !== productIds.length) {
+      throw new BadRequestException(
+        'Aynı ürün teklife birden fazla kez eklenemez',
+      );
+    }
+
     if (dto.currentAccountId) {
       const currentAccount = await this.prisma.currentAccount.findUnique({
         where: { id: dto.currentAccountId },
@@ -22,6 +31,12 @@ export class QuotesService {
 
       if (!currentAccount || !currentAccount.isActive) {
         throw new BadRequestException('Geçersiz cari hesap');
+      }
+
+      if (currentAccount.type !== 'CUSTOMER') {
+        throw new BadRequestException(
+          'Teklif için müşteri tipinde bir cari hesap seçilmelidir',
+        );
       }
     }
 
@@ -53,6 +68,12 @@ export class QuotesService {
         );
       }
 
+      if (discount < 0 || discount > lineSubtotal) {
+        throw new BadRequestException(
+          `İndirim, satır toplamından büyük veya negatif olamaz: ${item.productId}`,
+        );
+      }
+
       subtotal += lineSubtotal;
       discountTotal += discount;
     }
@@ -63,20 +84,7 @@ export class QuotesService {
     expiresAt.setDate(expiresAt.getDate() + 3);
 
     return this.prisma.$transaction(async (tx) => {
-      const counter = await tx.documentCounter.upsert({
-        where: { key: 'QUOTE' },
-        create: {
-          key: 'QUOTE',
-          value: 1,
-        },
-        update: {
-          value: {
-            increment: 1,
-          },
-        },
-      });
-
-      const quoteNo = `TKL-${String(counter.value).padStart(6, '0')}`;
+      const quoteNo = await generateDocumentNumber(tx, 'QUOTE');
 
       const quote = await tx.quote.create({
         data: {
@@ -222,6 +230,12 @@ export class QuotesService {
         throw new BadRequestException('Cari hesap aktif değil');
       }
 
+      if (quote.currentAccount && quote.currentAccount.type !== 'CUSTOMER') {
+        throw new BadRequestException(
+          'Satış için müşteri tipinde bir cari hesap seçilmelidir',
+        );
+      }
+
       const statusUpdate = await tx.quote.updateMany({
         where: {
           id: quote.id,
@@ -229,6 +243,7 @@ export class QuotesService {
         },
         data: {
           status: 'CONVERTED',
+          convertedAt: new Date(),
         },
       });
 
@@ -236,20 +251,7 @@ export class QuotesService {
         throw new BadRequestException('Teklif geçerli değil');
       }
 
-      const counter = await tx.documentCounter.upsert({
-        where: { key: 'SALE' },
-        create: {
-          key: 'SALE',
-          value: 1,
-        },
-        update: {
-          value: {
-            increment: 1,
-          },
-        },
-      });
-
-      const saleNo = `SAT-${String(counter.value).padStart(6, '0')}`;
+      const saleNo = await generateDocumentNumber(tx, 'SALE');
 
       for (const item of quote.items) {
         const product = await tx.product.findUnique({
@@ -293,78 +295,87 @@ export class QuotesService {
         }
       }
 
-        const sale = await tx.sale.create({
+      const sale = await tx.sale.create({
+        data: {
+          saleNo,
+          paymentType: quote.currentAccountId ? 'ON_ACCOUNT' : 'CASH',
+          subtotal: quote.subtotal,
+          discountTotal: quote.discountTotal,
+          grandTotal: quote.grandTotal,
+          note: `Tekliften dönüştürüldü: ${quote.quoteNo}`,
+          userId,
+          currentAccountId: quote.currentAccountId,
+        },
+      });
+
+      await tx.salePayment.create({
+        data: {
+          saleId: sale.id,
+          method: quote.currentAccountId ? 'ON_ACCOUNT' : 'CASH',
+          amount: quote.grandTotal,
+        },
+      });
+
+      for (const item of quote.items) {
+        await tx.saleItem.create({
           data: {
-            saleNo,
-            paymentType: quote.currentAccountId ? 'ON_ACCOUNT' : 'CASH',
-            subtotal: quote.subtotal,
-            discountTotal: quote.discountTotal,
-            grandTotal: quote.grandTotal,
-            note: `Tekliften dönüştürüldü: ${quote.quoteNo}`,
-            userId,
-            currentAccountId: quote.currentAccountId,
+            saleId: sale.id,
+            productId: item.productId,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            discount: item.discount,
+            lineTotal: item.lineTotal,
           },
         });
 
-        for (const item of quote.items) {
-          await tx.saleItem.create({
-            data: {
-              saleId: sale.id,
-              productId: item.productId,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              discount: item.discount,
-              lineTotal: item.lineTotal,
-            },
-          });
+        await tx.stockMovement.create({
+          data: {
+            productId: item.productId,
+            userId,
+            type: 'OUT',
+            quantity: item.quantity,
+            note: `Teklif satış dönüşümü - ${quote.quoteNo}`,
+          },
+        });
+      }
 
-          await tx.stockMovement.create({
-            data: {
-              productId: item.productId,
-              userId,
-              type: 'OUT',
-              quantity: item.quantity,
-              note: `Teklif satış dönüşümü - ${quote.quoteNo}`,
-            },
-          });
-        }
+      if (quote.currentAccountId) {
+        await tx.currentAccountMovement.create({
+          data: {
+            currentAccountId: quote.currentAccountId,
+            userId,
+            saleId: sale.id,
+            type: 'DEBT',
+            amount: quote.grandTotal,
+            note: `Teklif satış dönüşümü borcu - ${quote.quoteNo}`,
+          },
+        });
+      }
 
-        if (quote.currentAccountId) {
-          await tx.currentAccountMovement.create({
-            data: {
-              currentAccountId: quote.currentAccountId,
-              userId,
-              saleId: sale.id,
-              type: 'DEBT',
-              amount: quote.grandTotal,
-              note: `Teklif satış dönüşümü borcu - ${quote.quoteNo}`,
-            },
-          });
-        }
-
-        return tx.sale.findUnique({
-          where: { id: sale.id },
-          include: {
-            user: {
-              select: {
-                id: true,
-                username: true,
-                role: {
-                  select: {
-                    id: true,
-                    name: true,
-                  },
+      return tx.sale.findUnique({
+        where: { id: sale.id },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              role: {
+                select: {
+                  id: true,
+                  name: true,
                 },
               },
             },
-            currentAccount: true,
-            items: {
-              include: {
-                product: true,
-              },
+          },
+          currentAccount: true,
+          payments: true,
+          items: {
+            include: {
+              product: true,
             },
           },
-        });
+        },
+      });
     });
   }
 }

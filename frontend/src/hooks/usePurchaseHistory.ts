@@ -17,6 +17,10 @@ export function usePurchaseHistory() {
     PurchaseHistoryItem[]
   >([]);
 
+  const [productSummary, setProductSummary] = useState<
+    PurchaseHistoryResponse['summary'] | null
+  >(null);
+
   const [purchaseHistoryLoading, setPurchaseHistoryLoading] =
     useState(false);
 
@@ -28,15 +32,18 @@ export function usePurchaseHistory() {
       setPurchaseHistoryLoading(true);
       setSelectedProduct(product);
       setPurchaseHistoryOpen(true);
+      setProductSummary(null);
 
       const response = await api.get<PurchaseHistoryResponse>(
         `/products/${product.id}/purchase-history`,
       );
 
       setPurchaseHistory(response.data.purchases ?? []);
+      setProductSummary(response.data.summary);
     } catch (err) {
       console.error('PURCHASE HISTORY ERROR:', err);
       setPurchaseHistory([]);
+      setProductSummary(null);
     } finally {
       setPurchaseHistoryLoading(false);
     }
@@ -46,11 +53,13 @@ export function usePurchaseHistory() {
     setPurchaseHistoryOpen(false);
     setSelectedProduct(null);
     setPurchaseHistory([]);
+    setProductSummary(null);
   }
 
   return {
     selectedProduct,
     purchaseHistory,
+    productSummary,
     purchaseHistoryLoading,
     purchaseHistoryOpen,
     openPurchaseHistory,

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import axios from 'axios';
 import { FormEvent, useMemo, useState } from 'react';
-import { createProduct, CreateProductPayload } from '@/services/products';
+import { createProduct } from '@/services/products';
 import { api } from '@/lib/api';
 import { useProductMeta } from '@/hooks/useProductMeta';
 import { emptyProductForm, useProductForm } from '@/hooks/useProductForm';
@@ -77,6 +77,8 @@ export default function CreateProductPage() {
       const trimmedImageUrl = form.imageUrl?.trim() || '';
       const trimmedBarcode = form.barcode.trim();
       const trimmedShelfCode = form.shelfCode.trim().toUpperCase();
+      const trimmedSalePrice = form.salePrice?.trim() ?? '';
+      const salePrice = Number(trimmedSalePrice);
 
       if (!trimmedName) {
         setError('Ürün adı zorunludur.');
@@ -92,6 +94,16 @@ export default function CreateProductPage() {
 
       if (!trimmedShelfCode) {
         setError('Raf kodu zorunludur.');
+        setSaving(false);
+        return;
+      }
+
+      if (
+        !trimmedSalePrice ||
+        !Number.isFinite(salePrice) ||
+        salePrice < 0
+      ) {
+        setError('Geçerli bir satış fiyatı girilmelidir.');
         setSaving(false);
         return;
       }
@@ -128,15 +140,13 @@ export default function CreateProductPage() {
         imageUrl: trimmedImageUrl,
         barcode: trimmedBarcode,
         shelfCode: trimmedShelfCode,
-        lastPurchasePrice: '0',
-        salePrice: '0',
-        minSalePrice: '0',
+        salePrice: trimmedSalePrice,
         isActive: form.isActive,
         categoryId: form.categoryId,
         partBrandId: form.partBrandId,
         oemCodes: cleanedOemCodes,
         referenceCodes: cleanedReferenceCodes,
-      } as CreateProductPayload);
+      });
 
       for (const vehicleVariantId of uniqueVariantIds) {
         await api.post(`/products/${createdProduct.id}/compatibilities`, {
@@ -177,7 +187,8 @@ export default function CreateProductPage() {
           </h1>
           <p className="mt-2 text-sm text-neutral-500">
             Ürünün kimlik bilgilerini, kodlarını ve uyumlu araçlarını tanımlayın.
-            Fiyat ve stok bilgileri alış/satış ekranlarından yönetilir.
+            Satış fiyatını belirleyin; alış ve stok bilgileri işlemlerden
+            güncellenir.
           </p>
         </div>
 

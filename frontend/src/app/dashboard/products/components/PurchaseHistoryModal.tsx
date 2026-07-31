@@ -1,12 +1,17 @@
 'use client';
 
-import type { PurchaseHistoryItem } from '@/types/purchase';
+import type {
+  PurchaseHistoryItem,
+  PurchaseHistoryResponse,
+} from '@/types/purchase';
 import { formatPrice, formatTime } from '@/utils/format';
 
 type PurchaseHistoryModalProps = {
   open: boolean;
   loading: boolean;
   productName?: string;
+  currentSalePrice?: string | number | null;
+  productSummary?: PurchaseHistoryResponse['summary'] | null;
   purchaseHistory: PurchaseHistoryItem[];
   onClose: () => void;
 };
@@ -15,6 +20,8 @@ export function PurchaseHistoryModal({
   open,
   loading,
   productName,
+  currentSalePrice,
+  productSummary,
   purchaseHistory,
   onClose,
 }: PurchaseHistoryModalProps) {
@@ -27,12 +34,10 @@ export function PurchaseHistoryModal({
       <div className="w-full max-w-5xl overflow-hidden rounded-3xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-neutral-200 px-6 py-5">
           <div>
-            <h2 className="text-2xl font-bold text-neutral-900">
-              Son Alışlar
-            </h2>
+            <h2 className="text-2xl font-bold text-neutral-900">Ürün Detayı</h2>
 
             <div className="mt-1 text-sm text-neutral-500">
-              {productName || 'Ürün'} için son alış hareketleri
+              {productName || 'Ürün'} için fiyat özeti ve son alış hareketleri
             </div>
           </div>
 
@@ -45,16 +50,95 @@ export function PurchaseHistoryModal({
           </button>
         </div>
 
+        {!loading ? (
+          <>
+            <div className="grid gap-4 p-6 md:grid-cols-3">
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                  Güncel Satış Fiyatı
+                </div>
+                <div className="mt-2 text-xl font-bold text-neutral-900">
+                  {currentSalePrice != null
+                    ? formatPrice(currentSalePrice)
+                    : '-'}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                  Son Alış
+                </div>
+                <div className="mt-2 text-xl font-bold text-green-700">
+                  {productSummary?.lastPurchasePrice != null
+                    ? formatPrice(productSummary.lastPurchasePrice)
+                    : 'Alış yok'}
+                </div>
+                {productSummary?.lastPurchasePrice != null ? (
+                  <div className="mt-2 space-y-1 text-xs text-neutral-500">
+                    <div>
+                      {productSummary.lastSupplierName ||
+                        'Tedarikçi bilgisi yok'}
+                    </div>
+                    {productSummary.lastPurchaseDate ? (
+                      <div>
+                        {new Date(
+                          productSummary.lastPurchaseDate,
+                        ).toLocaleDateString('tr-TR')}{' '}
+                        {formatTime(productSummary.lastPurchaseDate)}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                  Son Satış
+                </div>
+                <div className="mt-2 text-xl font-bold text-red-700">
+                  {productSummary?.lastSalePrice != null
+                    ? formatPrice(productSummary.lastSalePrice)
+                    : 'Satış yok'}
+                </div>
+                {productSummary?.lastSalePrice != null ? (
+                  <div className="mt-2 space-y-1 text-xs text-neutral-500">
+                    <div>
+                      {productSummary.lastCustomerName || 'Perakende satış'}
+                    </div>
+                    {productSummary.lastSaleDate ? (
+                      <div>
+                        {new Date(
+                          productSummary.lastSaleDate,
+                        ).toLocaleDateString('tr-TR')}{' '}
+                        {formatTime(productSummary.lastSaleDate)}
+                      </div>
+                    ) : null}
+                    {productSummary.lastSaleNo ? (
+                      <div>{productSummary.lastSaleNo}</div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="border-t border-neutral-200 px-6 py-4">
+              <h3 className="font-semibold text-neutral-900">
+                Son Alış Hareketleri
+              </h3>
+            </div>
+          </>
+        ) : null}
+
         {loading ? (
           <div className="p-10 text-center text-sm text-neutral-500">
-            Son alışlar yükleniyor...
+            Ürün detayları yükleniyor...
           </div>
         ) : purchaseHistory.length === 0 ? (
-          <div className="p-10 text-center text-sm text-neutral-500">
+          <div className="border-t border-neutral-200 p-10 text-center text-sm text-neutral-500">
             Bu ürüne ait alış geçmişi bulunamadı.
           </div>
         ) : (
-          <div className="max-h-[70vh] overflow-auto">
+          <div className="max-h-[50vh] overflow-auto">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-neutral-100">
                 <tr>
@@ -87,7 +171,8 @@ export function PurchaseHistoryModal({
               <tbody>
                 {purchaseHistory.map((item) => {
                   const createdAt = item.purchase.createdAt;
-                  const supplierName = item.purchase.currentAccount?.name || 'Tedarikçi Yok';
+                  const supplierName =
+                    item.purchase.currentAccount?.name || 'Tedarikçi Yok';
                   const unitPrice = item.unitPrice;
                   const total = item.lineTotal;
 

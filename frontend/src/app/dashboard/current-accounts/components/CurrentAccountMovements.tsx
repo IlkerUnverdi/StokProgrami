@@ -75,6 +75,7 @@ export function CurrentAccountMovements({
             const saleItems = movement.sale?.items ?? [];
             const salePayments = movement.sale?.payments ?? [];
             const purchaseItems = movement.purchase?.items ?? [];
+            const returnItems = movement.returnDocument?.items ?? [];
             const lowerNote = movement.note?.toLocaleLowerCase('tr') ?? '';
             const isPurchaseMovement =
               Boolean(movement.purchase) ||
@@ -89,7 +90,9 @@ export function CurrentAccountMovements({
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="font-medium text-neutral-900">
-                      {movement.type === 'PAYMENT'
+                      {movement.type === 'CREDIT'
+                        ? 'İade Mahsubu'
+                        : movement.type === 'PAYMENT'
                         ? 'Tahsilat'
                         : isPurchaseMovement
                           ? 'Borç / Alış'
@@ -101,9 +104,11 @@ export function CurrentAccountMovements({
                         ? ` • ${movement.sale.saleNo}`
                         : movement.purchase?.purchaseNo
                           ? ` • ${movement.purchase.purchaseNo}`
-                          : ''}
+                          : movement.returnDocument?.returnNo
+                            ? ` • ${movement.returnDocument.returnNo}`
+                            : ''}
                     </div>
-                    {movement.type === 'PAYMENT' || !isPurchaseMovement ? (
+                    {movement.type !== 'DEBT' || !isPurchaseMovement ? (
                       <div className="mt-1 text-xs text-neutral-600">
                         {movement.type === 'PAYMENT'
                           ? `Ödeme: ${getCollectionPaymentLabel(
@@ -122,6 +127,7 @@ export function CurrentAccountMovements({
                           : 'text-green-700'
                       }`}
                     >
+                      {movement.type === 'DEBT' ? '+' : '-'}
                       {formatPrice(toNumberPrice(movement.amount))}
                     </div>
                     <button
@@ -138,7 +144,52 @@ export function CurrentAccountMovements({
 
                 {isExpanded ? (
                   <div className="mt-3 space-y-3 rounded-xl bg-neutral-50 p-3">
-                    {movement.type === 'PAYMENT' ? (
+                    {movement.type === 'CREDIT' ? (
+                      <>
+                        <div className="text-xs text-neutral-700">
+                          <div className="font-semibold text-neutral-900">
+                            İade Mahsubu{' '}
+                            {movement.returnDocument?.returnNo
+                              ? `• ${movement.returnDocument.returnNo}`
+                              : ''}
+                          </div>
+                          <div className="mt-1">
+                            Cari borçtan düşülen:{' '}
+                            {formatPrice(toNumberPrice(movement.amount))}
+                          </div>
+                          <div>Personel: {movement.user?.username || '-'}</div>
+                          <div>Not: {movement.note || '-'}</div>
+                        </div>
+
+                        {returnItems.length > 0 ? (
+                          <div className="space-y-2">
+                            {returnItems.map((item, index) => (
+                              <div
+                                key={item.id ?? index}
+                                className="flex items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-white p-2 text-xs"
+                              >
+                                <div>
+                                  <div className="font-medium text-neutral-900">
+                                    {item.product?.name || 'Ürün'}
+                                  </div>
+                                  <div className="text-neutral-500">
+                                    {item.quantity} adet ×{' '}
+                                    {formatPrice(
+                                      toNumberPrice(item.unitPrice),
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="font-semibold text-neutral-900">
+                                  {formatPrice(
+                                    toNumberPrice(item.lineTotal),
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </>
+                    ) : movement.type === 'PAYMENT' ? (
                       <div className="text-xs text-neutral-700">
                         <div className="font-semibold text-neutral-900">
                           Tahsilat Detayı

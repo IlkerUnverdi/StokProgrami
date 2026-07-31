@@ -19,6 +19,7 @@ model User {
   id        Int      @id @default(autoincrement())
   username  String   @unique
   password  String
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
   roleId Int
@@ -188,9 +189,10 @@ enum StockMovementType {
 }
 
 model ProductStock {
-  id        Int      @id @default(autoincrement())
-  quantity  Int      @default(0)
-  updatedAt DateTime @updatedAt
+  id                    Int      @id @default(autoincrement())
+  quantity              Int      @default(0)
+  returnPendingQuantity Int      @default(0)
+  updatedAt             DateTime @updatedAt
 
   productId Int     @unique
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -236,6 +238,7 @@ enum SalePaymentType {
 enum CurrentAccountMovementType {
   DEBT
   PAYMENT
+  CREDIT
 }
 
 model CurrentAccount {
@@ -278,6 +281,7 @@ model Sale {
   currentAccount   CurrentAccount? @relation(fields: [currentAccountId], references: [id])
 
   items                   SaleItem[]
+  customerReturns         Return[]                 @relation("CustomerReturnSale")
   currentAccountMovements CurrentAccountMovement[]
 
   @@index([userId])
@@ -323,10 +327,14 @@ model CurrentAccountMovement {
   purchaseId Int?
   purchase   Purchase? @relation(fields: [purchaseId], references: [id])
 
+  returnId       Int?
+  returnDocument Return? @relation(fields: [returnId], references: [id])
+
   @@index([currentAccountId])
   @@index([userId])
   @@index([saleId])
   @@index([purchaseId])
+  @@index([returnId])
   @@index([createdAt])
 }
 
@@ -436,12 +444,20 @@ enum ReturnType {
   WRONG_ITEM_RETURN
 }
 
+enum ReturnStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
 model Return {
-  id        Int        @id @default(autoincrement())
-  returnNo  String     @unique
-  type      ReturnType
-  note      String?
-  createdAt DateTime   @default(now())
+  id          Int          @id @default(autoincrement())
+  returnNo    String       @unique
+  type        ReturnType
+  status      ReturnStatus @default(PENDING)
+  note        String?
+  createdAt   DateTime     @default(now())
+  completedAt DateTime?
 
   userId Int
   user   User @relation(fields: [userId], references: [id])
@@ -449,10 +465,15 @@ model Return {
   currentAccountId Int?
   currentAccount   CurrentAccount? @relation(fields: [currentAccountId], references: [id])
 
-  items ReturnItem[]
+  sourceSaleId Int?
+  sourceSale   Sale? @relation("CustomerReturnSale", fields: [sourceSaleId], references: [id])
+
+  items                   ReturnItem[]
+  currentAccountMovements CurrentAccountMovement[]
 
   @@index([userId])
   @@index([currentAccountId])
+  @@index([sourceSaleId])
   @@index([type])
   @@index([createdAt])
 }
@@ -461,6 +482,7 @@ model ReturnItem {
   id        Int      @id @default(autoincrement())
   quantity  Int
   unitPrice Decimal? @db.Decimal(12, 2)
+  lineTotal Decimal  @default(0) @db.Decimal(12, 2)
   note      String?
   createdAt DateTime @default(now())
 

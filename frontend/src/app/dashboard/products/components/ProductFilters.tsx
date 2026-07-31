@@ -107,9 +107,12 @@ export function ProductFilters({
           <select
             value={categoryId}
             onChange={(event) => onCategoryChange(Number(event.target.value))}
-            className="h-11 w-full rounded-xl border border-neutral-300 bg-white px-4 text-sm outline-none focus:border-red-600"
+            disabled={categoryGroupId === 0}
+            className="h-11 w-full rounded-xl border border-neutral-300 bg-white px-4 text-sm outline-none focus:border-red-600 disabled:bg-neutral-100 disabled:text-neutral-400"
           >
-            <option value={0}>Tümü</option>
+            <option value={0}>
+              {categoryGroupId === 0 ? 'Önce grup seçin' : 'Tümü'}
+            </option>
             {filteredCategories.map((category) => (
               <option key={category.id} value={category.id}>
                 {category.name}

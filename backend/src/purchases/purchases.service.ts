@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { generateDocumentNumber } from '../common/document-number';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 
@@ -15,14 +16,20 @@ export class PurchasesService {
       throw new BadRequestException('Alış kalemi boş olamaz');
     }
 
+    const productIds = dto.items.map((item) => item.productId);
+
+    if (new Set(productIds).size !== productIds.length) {
+      throw new BadRequestException(
+        'Aynı ürün alışa birden fazla kez eklenemez',
+      );
+    }
+
     const supplier = await this.prisma.currentAccount.findUnique({
       where: { id: dto.currentAccountId },
     });
 
     if (!supplier || !supplier.isActive) {
-      throw new NotFoundException(
-        'Tedarikçi cari bulunamadı veya pasif',
-      );
+      throw new NotFoundException('Tedarikçi cari bulunamadı veya pasif');
     }
 
     if (supplier.type !== 'SUPPLIER') {
@@ -33,20 +40,7 @@ export class PurchasesService {
       let subtotal = 0;
       let discountTotal = 0;
 
-      const counter = await tx.documentCounter.upsert({
-        where: { key: 'PURCHASE' },
-        create: { 
-          key: 'PURCHASE',
-          value: 1,
-        },
-        update: {
-          value: {
-            increment: 1,
-          },
-        },
-      });
-
-      const purchaseNo = `ALS-${String(counter.value).padStart(6, '0')}`;
+      const purchaseNo = await generateDocumentNumber(tx, 'PURCHASE');
 
       for (const item of dto.items) {
         const product = await tx.product.findUnique({
@@ -74,9 +68,7 @@ export class PurchasesService {
       }
 
       if (discountTotal > subtotal) {
-        throw new BadRequestException(
-          'Toplam indirim, toplam tutarı geçemez',
-        );
+        throw new BadRequestException('Toplam indirim, toplam tutarı geçemez');
       }
 
       const grandTotal = subtotal - discountTotal;
@@ -131,6 +123,7 @@ export class PurchasesService {
             userId,
             type: 'IN',
             quantity: item.quantity,
+            supplierId: dto.currentAccountId,
             note: `Alış girişi - ${purchase.purchaseNo}`,
           },
         });
@@ -148,8 +141,10 @@ export class PurchasesService {
           data: {
             currentAccountId: dto.currentAccountId,
             userId,
+            purchaseId: purchase.id,
             type: 'DEBT',
             amount: grandTotal,
+            paymentMethod: 'ON_ACCOUNT',
             note: `Alış borcu - ${purchase.purchaseNo}`,
           },
         });

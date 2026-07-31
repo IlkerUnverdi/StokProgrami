@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -13,7 +17,6 @@ export class CategoriesService {
       orderBy: [{ categoryGroup: { name: 'asc' } }, { name: 'asc' }],
     });
   }
-
 
   findGroups() {
     return this.prisma.categoryGroup.findMany({
@@ -84,14 +87,20 @@ export class CategoriesService {
   async deleteGroup(id: number) {
     const group = await this.prisma.categoryGroup.findUnique({
       where: { id },
-      include: { categories: true },
+      select: {
+        _count: {
+          select: {
+            categories: true,
+          },
+        },
+      },
     });
 
     if (!group) {
       throw new NotFoundException('Kategori grubu bulunamadı.');
     }
 
-    if (group.categories.length > 0) {
+    if (group._count.categories > 0) {
       throw new BadRequestException(
         'Bu kategori grubuna bağlı alt kategoriler var. Önce alt kategorileri taşıyın veya silin.',
       );
@@ -124,7 +133,6 @@ export class CategoriesService {
 
     const existing = await this.prisma.category.findFirst({
       where: {
-        categoryGroupId,
         name: {
           equals: name,
           mode: 'insensitive',
@@ -133,7 +141,7 @@ export class CategoriesService {
     });
 
     if (existing) {
-      throw new BadRequestException('Bu alt kategori seçilen grup altında zaten kayıtlı.');
+      throw new BadRequestException('Bu alt kategori zaten kayıtlı.');
     }
 
     return this.prisma.category.create({
@@ -179,7 +187,6 @@ export class CategoriesService {
     const existing = await this.prisma.category.findFirst({
       where: {
         id: { not: id },
-        categoryGroupId,
         name: {
           equals: name,
           mode: 'insensitive',
@@ -188,7 +195,7 @@ export class CategoriesService {
     });
 
     if (existing) {
-      throw new BadRequestException('Bu alt kategori seçilen grup altında zaten kayıtlı.');
+      throw new BadRequestException('Bu alt kategori zaten kayıtlı.');
     }
 
     return this.prisma.category.update({
@@ -204,16 +211,22 @@ export class CategoriesService {
   async deleteCategory(id: number) {
     const category = await this.prisma.category.findUnique({
       where: { id },
-      include: { products: true },
+      select: {
+        _count: {
+          select: {
+            products: true,
+          },
+        },
+      },
     });
 
     if (!category) {
       throw new NotFoundException('Alt kategori bulunamadı.');
     }
 
-    if (category.products.length > 0) {
+    if (category._count.products > 0) {
       throw new BadRequestException(
-        'Bu alt kategoriye bağlı ürünler var. Ürünleri başka kategoriye taşımeden silinemez.',
+        'Bu alt kategoriye bağlı ürünler var. Ürünleri başka kategoriye taşımadan silinemez.',
       );
     }
 

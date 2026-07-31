@@ -81,7 +81,7 @@ export function useSalesCheckout({
           TRANSFER: toNumberPrice(payments.TRANSFER),
           ON_ACCOUNT: toNumberPrice(payments.ON_ACCOUNT),
         },
-        currentAccountName: selectedCurrentAccount?.name,
+        currentAccountId: selectedCurrentAccount?.id,
         note: note.trim() || undefined,
       });
 

@@ -74,12 +74,22 @@ export function useProductFilters({
 
   const filteredCategories = useMemo(() => {
     if (categoryGroupId === 0) {
-      return categories;
+      return [];
     }
 
     return categories
       .filter((category) => category.categoryGroupId === categoryGroupId)
       .sort((a, b) => a.name.localeCompare(b.name, 'tr'));
+  }, [categories, categoryGroupId]);
+
+  const categoryIdsInSelectedGroup = useMemo(() => {
+    return new Set(
+      categories
+        .filter(
+          (category) => category.categoryGroupId === categoryGroupId,
+        )
+        .map((category) => category.id),
+    );
   }, [categories, categoryGroupId]);
 
   const filteredProducts = useMemo(() => {
@@ -114,7 +124,9 @@ export function useProductFilters({
 
       const matchesCategoryGroup =
         categoryGroupId === 0 ||
-        product.category?.categoryGroup?.id === categoryGroupId;
+        categoryIdsInSelectedGroup.has(
+          product.categoryId ?? product.category?.id ?? 0,
+        );
 
       const matchesCategory =
         categoryId === 0 || product.categoryId === categoryId || product.category?.id === categoryId;
@@ -153,6 +165,7 @@ export function useProductFilters({
     search,
     categoryGroupId,
     categoryId,
+    categoryIdsInSelectedGroup,
     vehicleBrandId,
     vehicleModelName,
     vehicleYearRange,

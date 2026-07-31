@@ -32,8 +32,14 @@ export type PurchaseHistoryResponse = {
   summary: {
     purchaseCount: number;
     totalQuantity: number;
+    totalAmount: number;
     lastPurchasePrice?: string | number | null;
+    lastPurchaseDate?: string | null;
     lastSupplierName?: string | null;
+    lastSalePrice?: string | number | null;
+    lastSaleDate?: string | null;
+    lastCustomerName?: string | null;
+    lastSaleNo?: string | null;
   };
 
   purchases: PurchaseHistoryItem[];

@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 type UserWithRole = {
   id: number;
   username: string;
+  isActive: boolean;
   createdAt: Date;
   role: {
     name: string;
@@ -24,7 +25,7 @@ export class UsersService {
       id: user.id,
       username: user.username,
       role: user.role.name,
-      isActive: true,
+      isActive: user.isActive,
       createdAt: user.createdAt,
     };
   }
@@ -42,17 +43,17 @@ export class UsersService {
     return users.map((user) => this.toResponse(user));
   }
 
-  async create(body: {
-    username: string;
-    password: string;
-    role: string;
-  }) {
+  async create(body: { username: string; password: string; role: string }) {
     const username = body.username?.trim();
     const password = body.password?.trim();
     const roleName = body.role?.trim();
 
     if (!username || !password || !roleName) {
       throw new BadRequestException('Tüm alanlar zorunludur.');
+    }
+
+    if (password.length < 6) {
+      throw new BadRequestException('Şifre en az 6 karakter olmalıdır.');
     }
 
     const existingUser = await this.prisma.user.findUnique({
@@ -111,15 +112,22 @@ export class UsersService {
       throw new NotFoundException('Kullanıcı bulunamadı.');
     }
 
-    await this.prisma.user.delete({
+    if (user.username.toLowerCase() === 'admin') {
+      throw new BadRequestException('Admin kullanıcısı silinemez.');
+    }
+
+    await this.prisma.user.update({
       where: {
         id,
+      },
+      data: {
+        isActive: false,
       },
     });
 
     return {
       success: true,
-      message: 'Kullanıcı silindi.',
+      message: 'Kullanıcı pasif hale getirildi.',
     };
   }
 }

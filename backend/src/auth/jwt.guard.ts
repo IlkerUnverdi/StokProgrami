@@ -7,6 +7,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 
+import { PrismaService } from '../prisma/prisma.service';
+
 type AuthenticatedUser = {
   sub: number;
   username: string;
@@ -18,9 +20,10 @@ export class JwtGuard implements CanActivate {
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly prisma: PrismaService,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<{
       headers: {
         authorization?: string;
@@ -41,19 +44,41 @@ export class JwtGuard implements CanActivate {
     }
 
     try {
-      const secret =
-        this.configService.getOrThrow<string>('JWT_SECRET');
+      const secret = this.configService.getOrThrow<string>('JWT_SECRET');
 
-      request.user =
-        this.jwtService.verify<AuthenticatedUser>(token, {
-          secret,
-        });
+      const payload = this.jwtService.verify<AuthenticatedUser>(token, {
+        secret,
+      });
+
+      const user = await this.prisma.user.findFirst({
+        where: {
+          id: payload.sub,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          username: true,
+          role: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      });
+
+      if (!user) {
+        throw new UnauthorizedException();
+      }
+
+      request.user = {
+        sub: user.id,
+        username: user.username,
+        role: user.role.name,
+      };
 
       return true;
     } catch {
-      throw new UnauthorizedException(
-        'Token geçersiz veya süresi dolmuş.',
-      );
+      throw new UnauthorizedException('Token geçersiz veya süresi dolmuş.');
     }
   }
 }

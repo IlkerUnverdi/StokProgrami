@@ -1,8 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   UseGuards,
@@ -44,7 +46,7 @@ export class VehicleVariantsController {
 
   @Patch(':id')
   update(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body()
     body: {
       brand?: string;
@@ -60,6 +62,11 @@ export class VehicleVariantsController {
       yearEnd?: number | null;
     },
   ) {
-    return this.vehicleVariantsService.update(Number(id), body);
+    return this.vehicleVariantsService.update(id, body);
+  }
+
+  @Delete(':id')
+  remove(@Param('id', ParseIntPipe) id: number) {
+    return this.vehicleVariantsService.remove(id);
   }
 }

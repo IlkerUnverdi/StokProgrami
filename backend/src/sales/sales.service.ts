@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { generateDocumentNumber } from '../common/document-number';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
 
@@ -23,22 +24,7 @@ export class SalesService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const saleCounter = await tx.documentCounter.upsert({
-        where: {
-          key: 'SALE',
-        },
-        create: {
-          key: 'SALE',
-          value: 1,
-        },
-        update: {
-          value: {
-            increment: 1,
-          },
-        },
-      });
-
-      const saleNo = `SAT-${String(saleCounter.value).padStart(6, '0')}`;
+      const saleNo = await generateDocumentNumber(tx, 'SALE');
 
       let subtotal = 0;
 
@@ -71,27 +57,32 @@ export class SalesService {
       const paidTotal = cash + card + transfer + onAccount;
 
       if (Math.abs(subtotal - paidTotal) > 0.01) {
-        throw new BadRequestException('Ödeme toplamı satış toplamına eşit olmalı.');
+        throw new BadRequestException(
+          'Ödeme toplamı satış toplamına eşit olmalı.',
+        );
       }
 
       const activePayments = [
-        {method: 'CASH' as const, amount: cash},
-        {method: 'CARD' as const, amount: card},
-        {method: 'TRANSFER' as const, amount: transfer},
-        {method: 'ON_ACCOUNT' as const, amount: onAccount},
-      ].filter(payment => payment.amount > 0);
+        { method: 'CASH' as const, amount: cash },
+        { method: 'CARD' as const, amount: card },
+        { method: 'TRANSFER' as const, amount: transfer },
+        { method: 'ON_ACCOUNT' as const, amount: onAccount },
+      ].filter((payment) => payment.amount > 0);
 
       if (activePayments.length === 0) {
         throw new BadRequestException('En az bir ödeme yöntemi seçilmelidir.');
       }
 
-      const paymentType = activePayments.length === 1 ? activePayments[0].method : 'MIXED';
+      const paymentType =
+        activePayments.length === 1 ? activePayments[0].method : 'MIXED';
 
       let currentAccountId: number | null = null;
 
       if (onAccount > 0) {
         if (!dto.currentAccountId) {
-          throw new BadRequestException('Cari satış için cari hesap seçilmelidir.');
+          throw new BadRequestException(
+            'Cari satış için cari hesap seçilmelidir.',
+          );
         }
 
         const currentAccount = await tx.currentAccount.findUnique({

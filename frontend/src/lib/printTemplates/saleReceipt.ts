@@ -1,6 +1,8 @@
 // frontend/src/lib/printTemplates/saleReceipt.ts
 
 import { api } from '@/lib/api';
+import { escapeHtml } from '@/utils/html';
+
 type SaleItem = {
   id: number;
   quantity: number;
@@ -172,11 +174,11 @@ export async function printSaleReceipt(sale: Sale) {
         <tr>
           <td class="muted">${index + 1}</td>
           <td>
-            <div class="product-name">${item.product.name}</div>
-            <div class="product-meta">${item.product.partBrand?.name || '-'}</div>
+            <div class="product-name">${escapeHtml(item.product.name)}</div>
+            <div class="product-meta">${escapeHtml(item.product.partBrand?.name || '-')}</div>
           </td>
-          <td>${getPrimaryOem(item)}</td>
-          <td>${getPrimaryReference(item)}</td>
+          <td>${escapeHtml(getPrimaryOem(item))}</td>
+          <td>${escapeHtml(getPrimaryReference(item))}</td>
           <td class="right">${item.quantity}</td>
           <td class="right">${Number(item.unitPrice).toFixed(2)} ₺</td>
           <td class="right strong">${Number(item.lineTotal).toFixed(2)} ₺</td>
@@ -191,8 +193,8 @@ export async function printSaleReceipt(sale: Sale) {
           .map(
             (payment: PaymentBadge) => `
               <div class="summary-row">
-                <span>${payment.label}</span>
-                <strong>${payment.value} ₺</strong>
+                <span>${escapeHtml(payment.label)}</span>
+                <strong>${escapeHtml(payment.value)} ₺</strong>
               </div>
             `,
           )
@@ -207,7 +209,7 @@ export async function printSaleReceipt(sale: Sale) {
       <head>
         <meta charSet="UTF-8" />
         <meta httpEquiv="Content-Type" content="text/html; charset=utf-8" />
-        <title>${sale.saleNo}</title>
+        <title>${escapeHtml(sale.saleNo)}</title>
 
         <style>
           * { box-sizing: border-box; }
@@ -566,7 +568,7 @@ export async function printSaleReceipt(sale: Sale) {
 
             <div class="document-title">
               <div class="label">Satış Fişi</div>
-              <div class="number">${sale.saleNo}</div>
+              <div class="number">${escapeHtml(sale.saleNo)}</div>
               <div class="date">${formatDateTime(sale.createdAt)}</div>
             </div>
           </div>
@@ -574,8 +576,8 @@ export async function printSaleReceipt(sale: Sale) {
           <div class="meta-grid">
             <div>
               <div class="meta-label">Müşteri / Cari</div>
-              <div class="meta-value">${sale.currentAccount?.name || 'Peşin Satış'}</div>
-              <div class="meta-sub">${sale.currentAccount?.phone || 'Telefon bilgisi yok'}</div>
+              <div class="meta-value">${escapeHtml(sale.currentAccount?.name || 'Peşin Satış')}</div>
+              <div class="meta-sub">${escapeHtml(sale.currentAccount?.phone || 'Telefon bilgisi yok')}</div>
             </div>
 
             <div>
@@ -586,7 +588,7 @@ export async function printSaleReceipt(sale: Sale) {
 
             <div>
               <div class="meta-label">Satış No</div>
-              <div class="meta-value">${sale.saleNo}</div>
+              <div class="meta-value">${escapeHtml(sale.saleNo)}</div>
               <div class="meta-sub">Sistem satış kaydı</div>
             </div>
           </div>
@@ -614,7 +616,7 @@ export async function printSaleReceipt(sale: Sale) {
           <div class="bottom">
             <div class="note">
               <div class="note-title">Not / Açıklama</div>
-              <div class="note-text">${cleanNote || 'Bu satış için not girilmedi.'}</div>
+              <div class="note-text">${escapeHtml(cleanNote || 'Bu satış için not girilmedi.')}</div>
             </div>
 
             <div class="summary">
@@ -635,7 +637,7 @@ export async function printSaleReceipt(sale: Sale) {
 
           <div class="footer">
             <div>Enes Otomotiv Yedek Parça</div>
-            <div>Satış No: ${sale.saleNo}</div>
+            <div>Satış No: ${escapeHtml(sale.saleNo)}</div>
             <div>Bu belge sistem tarafından oluşturulmuştur.</div>
           </div>
         </div>

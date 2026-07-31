@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   UseGuards,
@@ -33,15 +34,15 @@ export class CategoriesController {
 
   @Patch('groups/:id')
   updateGroup(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() body: { name?: string },
   ) {
-    return this.service.updateGroup(Number(id), body);
+    return this.service.updateGroup(id, body);
   }
 
   @Delete('groups/:id')
-  deleteGroup(@Param('id') id: string) {
-    return this.service.deleteGroup(Number(id));
+  deleteGroup(@Param('id', ParseIntPipe) id: number) {
+    return this.service.deleteGroup(id);
   }
 
   @Post()
@@ -51,14 +52,14 @@ export class CategoriesController {
 
   @Patch(':id')
   updateCategory(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() body: { name?: string; categoryGroupId?: number },
   ) {
-    return this.service.updateCategory(Number(id), body);
+    return this.service.updateCategory(id, body);
   }
 
   @Delete(':id')
-  deleteCategory(@Param('id') id: string) {
-    return this.service.deleteCategory(Number(id));
+  deleteCategory(@Param('id', ParseIntPipe) id: number) {
+    return this.service.deleteCategory(id);
   }
 }

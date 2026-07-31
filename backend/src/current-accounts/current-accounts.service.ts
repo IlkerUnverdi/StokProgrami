@@ -13,16 +13,24 @@ export class CurrentAccountsService {
   constructor(private readonly prisma: PrismaService) {}
 
   create(dto: CreateCurrentAccountDto) {
+    const name = dto.name.trim();
+
+    if (!name) {
+      throw new BadRequestException('Cari adı zorunludur.');
+    }
+
     return this.prisma.currentAccount.create({
       data: {
-        name: dto.name,
-        phone: dto.phone,
-        taxNumber: dto.taxNumber,
-        address: dto.address,
+        name,
+        phone: dto.phone?.trim() || null,
+        taxNumber: dto.taxNumber?.trim() || null,
+        address: dto.address?.trim() || null,
         type: dto.type,
+        isActive: dto.isActive ?? true,
       },
     });
   }
+
   async update(id: number, dto: UpdateCurrentAccountDto) {
     const currentAccount = await this.prisma.currentAccount.findUnique({
       where: { id },
@@ -32,9 +40,25 @@ export class CurrentAccountsService {
       throw new NotFoundException('Cari bulunamadı');
     }
 
+    const name = dto.name?.trim();
+
+    if (dto.name !== undefined && !name) {
+      throw new BadRequestException('Cari adı zorunludur.');
+    }
+
     return this.prisma.currentAccount.update({
       where: { id },
-      data: dto,
+      data: {
+        ...dto,
+        name,
+        phone: dto.phone !== undefined ? dto.phone.trim() || null : undefined,
+        taxNumber:
+          dto.taxNumber !== undefined
+            ? dto.taxNumber.trim() || null
+            : undefined,
+        address:
+          dto.address !== undefined ? dto.address.trim() || null : undefined,
+      },
     });
   }
 
@@ -108,6 +132,21 @@ export class CurrentAccountsService {
                 },
               },
             },
+            returnDocument: {
+              include: {
+                items: {
+                  include: {
+                    product: {
+                      include: {
+                        partBrand: true,
+                        oemCodes: true,
+                        referenceCodes: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
           },
           orderBy: { id: 'desc' },
         },
@@ -139,7 +178,7 @@ export class CurrentAccountsService {
     for (const movement of movements) {
       if (movement.type === 'DEBT') {
         balance += Number(movement.amount);
-      } else if (movement.type === 'PAYMENT') {
+      } else if (movement.type === 'PAYMENT' || movement.type === 'CREDIT') {
         balance -= Number(movement.amount);
       }
     }

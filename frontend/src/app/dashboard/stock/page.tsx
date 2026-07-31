@@ -89,6 +89,25 @@ export default function StockPage() {
   }, [products, search]);
 
   async function handleSubmit() {
+    const parsedQuantity = Number(quantity);
+    const parsedUnitCost = Number(unitCost);
+
+    if (!Number.isInteger(parsedQuantity) || parsedQuantity <= 0) {
+      setError('Adet pozitif bir tam sayı olmalıdır.');
+      setMessage('');
+      return;
+    }
+
+    if (
+      unitCost.trim().length === 0 ||
+      !Number.isFinite(parsedUnitCost) ||
+      parsedUnitCost <= 0
+    ) {
+      setError('Birim alış fiyatı sıfırdan büyük olmalıdır.');
+      setMessage('');
+      return;
+    }
+
     setSaving(true);
     setError('');
     setMessage('');
@@ -100,8 +119,8 @@ export default function StockPage() {
           ? Number(selectedSupplierId)
           : undefined,
         type: 'IN',
-        quantity: Number(quantity),
-        unitCost: unitCost ? Number(unitCost) : undefined,
+        quantity: parsedQuantity,
+        unitCost: parsedUnitCost,
         reference: reference || undefined,
         note: note || undefined,
       });
@@ -232,9 +251,12 @@ export default function StockPage() {
                 Birim Alış Fiyatı
               </label>
               <input
+                type="number"
+                min="0.01"
+                step="0.01"
                 value={unitCost}
                 onChange={(e) => setUnitCost(e.target.value)}
-                placeholder="Opsiyonel"
+                placeholder="Örn: 150.00"
                 className="h-11 w-full rounded-xl border border-neutral-300 px-4 outline-none focus:border-red-600"
               />
             </div>
@@ -279,7 +301,16 @@ export default function StockPage() {
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={!selectedProductId || !selectedSupplierId || saving || Number(quantity) <= 0}
+              disabled={
+                !selectedProductId ||
+                !selectedSupplierId ||
+                saving ||
+                !Number.isInteger(Number(quantity)) ||
+                Number(quantity) <= 0 ||
+                unitCost.trim().length === 0 ||
+                !Number.isFinite(Number(unitCost)) ||
+                Number(unitCost) <= 0
+              }
               className="w-full rounded-xl bg-red-600 px-4 py-3 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {saving
@@ -288,6 +319,10 @@ export default function StockPage() {
                   ? 'Önce Ürün Seç'
                   : !selectedSupplierId
                     ? 'Tedarikçi Seç'
+                    : unitCost.trim().length === 0 ||
+                        !Number.isFinite(Number(unitCost)) ||
+                        Number(unitCost) <= 0
+                      ? 'Alış Fiyatı Gir'
                     : 'Stok Girişini Kaydet'}
             </button>
           </div>

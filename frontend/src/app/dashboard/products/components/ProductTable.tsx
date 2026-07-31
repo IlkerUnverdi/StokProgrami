@@ -78,7 +78,19 @@ export default function ProductTable({
               return (
                 <tr
                   key={product.id}
-                  onDoubleClick={() => onOpenPurchaseHistory(product)}
+                  onDoubleClick={(event) => {
+                    const target = event.target as HTMLElement;
+
+                    if (
+                      target.closest(
+                        'button, a, input, select, textarea',
+                      )
+                    ) {
+                      return;
+                    }
+
+                    onOpenPurchaseHistory(product);
+                  }}
                   className="border-t border-neutral-200 transition hover:bg-neutral-50"
                 >
                   <td className="p-4 align-top">

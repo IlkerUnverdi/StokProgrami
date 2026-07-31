@@ -49,9 +49,7 @@ export type CreateProductPayload = {
   imageUrl?: string;
   barcode: string;
   shelfCode: string;
-  lastPurchasePrice: string;
   salePrice: string;
-  minSalePrice: string;
   isActive: boolean;
   categoryId: number;
   partBrandId: number;

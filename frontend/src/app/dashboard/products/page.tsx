@@ -76,6 +76,7 @@ export default function ProductsListPage() {
   const {
     selectedProduct: purchaseHistoryProduct,
     purchaseHistory,
+    productSummary,
     purchaseHistoryLoading,
     purchaseHistoryOpen,
     openPurchaseHistory,
@@ -134,6 +135,8 @@ export default function ProductsListPage() {
         open={purchaseHistoryOpen}
         loading={purchaseHistoryLoading}
         productName={purchaseHistoryProduct?.name}
+        currentSalePrice={purchaseHistoryProduct?.salePrice}
+        productSummary={productSummary}
         purchaseHistory={purchaseHistory}
         onClose={closePurchaseHistory}
       />
