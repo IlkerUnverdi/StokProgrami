@@ -1,10 +1,12 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
   Param,
   ParseIntPipe,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -27,10 +29,24 @@ export class PurchasesController {
   }
 
   @Get()
-  findAll() {
-    return this.purchasesService.findAll();
-  }
+  findAll(@Query('currentAccountId') currentAccountId?: string) {
+    if (!currentAccountId) {
+      return this.purchasesService.findAll();
+    }
 
+    const parsedCurrentAccountId = Number(currentAccountId);
+
+    if (
+      !Number.isInteger(parsedCurrentAccountId) ||
+      parsedCurrentAccountId <= 0
+    ) {
+      throw new BadRequestException(
+        'Geçerli bir cari hesap ID değeri girilmelidir.',
+      );
+    }
+
+    return this.purchasesService.findAll(parsedCurrentAccountId);
+  }
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.purchasesService.findOne(id);

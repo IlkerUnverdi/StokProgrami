@@ -413,6 +413,7 @@ model Purchase {
 
   items                   PurchaseItem[]
   currentAccountMovements CurrentAccountMovement[]
+  supplierReturns         Return[]                 @relation("SupplierReturnPurchase")
 
   @@index([userId])
   @@index([currentAccountId])
@@ -468,12 +469,16 @@ model Return {
   sourceSaleId Int?
   sourceSale   Sale? @relation("CustomerReturnSale", fields: [sourceSaleId], references: [id])
 
+  sourcePurchaseId Int?
+  sourcePurchase   Purchase? @relation("SupplierReturnPurchase", fields: [sourcePurchaseId], references: [id])
+
   items                   ReturnItem[]
   currentAccountMovements CurrentAccountMovement[]
 
   @@index([userId])
   @@index([currentAccountId])
   @@index([sourceSaleId])
+  @@index([sourcePurchaseId])
   @@index([type])
   @@index([createdAt])
 }

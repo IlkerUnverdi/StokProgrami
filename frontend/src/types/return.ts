@@ -43,6 +43,12 @@ export type ReturnDocument = {
     saleNo: string;
     createdAt: string;
   } | null;
+  sourcePurchaseId?: number | null;
+  sourcePurchase?: {
+    id: number;
+    purchaseNo: string;
+    createdAt: string;
+  } | null;
   items: ReturnItem[];
 };
 
@@ -65,6 +71,7 @@ export type DraftSupplierReturnItem = DraftReturnItem;
 export type CreateSupplierReturnPayload = {
   type: SupplierReturnType;
   currentAccountId: number;
+  sourcePurchaseId: number;
   note?: string;
   items: DraftSupplierReturnItem[];
 };

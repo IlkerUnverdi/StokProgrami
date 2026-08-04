@@ -171,8 +171,14 @@ export class PurchasesService {
     });
   }
 
-  findAll() {
+  findAll(currentAccountId?: number) {
     return this.prisma.purchase.findMany({
+      where: currentAccountId
+        ? {
+            currentAccountId,
+          }
+        : undefined,
+
       include: {
         user: {
           select: {
@@ -181,14 +187,18 @@ export class PurchasesService {
             role: { select: { id: true, name: true } },
           },
         },
+
         currentAccount: true,
+
         items: {
           include: {
             product: true,
           },
         },
       },
-      orderBy: { id: 'desc' },
+      orderBy: {
+        id: 'desc',
+      },
     });
   }
 

@@ -29,6 +29,12 @@ export class CreateReturnDto {
   sourceSaleId?: number;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsPositive()
+  sourcePurchaseId?: number;
+
+  @IsOptional()
   @IsString()
   note?: string;
 

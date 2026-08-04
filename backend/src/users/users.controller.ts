@@ -4,13 +4,18 @@ import {
   Delete,
   Get,
   Param,
+  ParseIntPipe,
   Post,
   UseGuards,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtGuard } from '../auth/jwt.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { CreateUserDto } from './dto/create-user.dto';
 
-@UseGuards(JwtGuard)
+@Roles('Admin')
+@UseGuards(JwtGuard, RolesGuard)
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
@@ -21,19 +26,12 @@ export class UsersController {
   }
 
   @Post()
-  create(
-    @Body()
-    body: {
-      username: string;
-      password: string;
-      role: string;
-    },
-  ) {
+  create(@Body() body: CreateUserDto) {
     return this.usersService.create(body);
   }
 
   @Delete(':id')
-  deleteUser(@Param('id') id: string) {
-    return this.usersService.deleteUser(Number(id));
+  deleteUser(@Param('id', ParseIntPipe) id: number) {
+    return this.usersService.deleteUser(id);
   }
 }

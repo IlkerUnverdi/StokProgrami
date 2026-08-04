@@ -19,6 +19,7 @@ export function useSupplierReturnForm({
   createReturn,
 }: UseSupplierReturnFormParams) {
   const [supplierId, setSupplierId] = useState('');
+  const [sourcePurchaseId, setSourcePurchaseId] = useState('');
   const [returnType, setReturnType] =
     useState<SupplierReturnType>('DEFECTIVE_RETURN');
   const [selectedProductId, setSelectedProductId] = useState('');
@@ -84,6 +85,11 @@ export function useSupplierReturnForm({
       return;
     }
 
+    if (!sourcePurchaseId) {
+      setFormError('Kaynak alış seçin.');
+      return;
+    }
+
     if (draftItems.length === 0) {
       setFormError('İade listesine en az bir ürün ekleyin.');
       return;
@@ -92,6 +98,7 @@ export function useSupplierReturnForm({
     const created = await createReturn({
       type: returnType,
       currentAccountId: Number(supplierId),
+      sourcePurchaseId: Number(sourcePurchaseId),
       note: returnNote.trim() || undefined,
       items: draftItems,
     });
@@ -99,12 +106,15 @@ export function useSupplierReturnForm({
     if (created) {
       setDraftItems([]);
       setReturnNote('');
+      setSourcePurchaseId('');
     }
   }
 
   return {
     supplierId,
     setSupplierId,
+    sourcePurchaseId,
+    setSourcePurchaseId,
     returnType,
     setReturnType,
     selectedProductId,

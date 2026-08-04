@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateUserDto } from './dto/create-user.dto';
 
 type UserWithRole = {
   id: number;
@@ -43,8 +44,8 @@ export class UsersService {
     return users.map((user) => this.toResponse(user));
   }
 
-  async create(body: { username: string; password: string; role: string }) {
-    const username = body.username?.trim();
+  async create(body: CreateUserDto) {
+    const username = body.username.trim();
     const password = body.password?.trim();
     const roleName = body.role?.trim();
 
