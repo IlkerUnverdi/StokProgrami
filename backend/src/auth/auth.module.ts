@@ -15,15 +15,10 @@ import { JwtGuard } from './jwt.guard';
       global: true,
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (
-        configService: ConfigService,
-      ): JwtModuleOptions => ({
+      useFactory: (configService: ConfigService): JwtModuleOptions => ({
         secret: configService.getOrThrow<string>('JWT_SECRET'),
         signOptions: {
-          expiresIn: configService.get<StringValue>(
-            'JWT_EXPIRES_IN',
-            '1d',
-          ),
+          expiresIn: configService.get<StringValue>('JWT_EXPIRES_IN', '1d'),
         },
       }),
     }),
