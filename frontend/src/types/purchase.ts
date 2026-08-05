@@ -44,3 +44,22 @@ export type PurchaseHistoryResponse = {
 
   purchases: PurchaseHistoryItem[];
 };
+
+export type SupplierPurchaseItem = {
+  id: number;
+  productId: number;
+  quantity: number;
+  unitPrice: string | number;
+  lineTotal: string | number;
+  product?: ProductListItem | null;
+};
+
+export type SupplierPurchase = {
+  id: number;
+  purchaseNo: string;
+  paymentType : 'CASH' | 'TRANSFER' | 'CARD' | 'ON_ACCOUNT';
+  grandTotal: string | number;
+  createdAt: string;
+  currentAccountId: number;
+  items: SupplierPurchaseItem[];
+};

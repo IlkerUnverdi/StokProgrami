@@ -60,14 +60,48 @@ export function useSupplierReturns() {
     void loadData();
   }, [loadData]);
 
-  async function createReturn(payload: CreateSupplierReturnPayload) {
+  async function createReturn(
+    payload: CreateSupplierReturnPayload,
+    invoiceFile?: File | null,
+  ) {
     try {
       setSavingAction('create');
       setError('');
       setMessage('');
-      await api.post('/returns', payload);
+
+      const response = await api.post<ReturnDocument>(
+        '/returns',
+        payload,
+      );
+
+      if (invoiceFile) {
+        const formData = new FormData();
+        formData.append('file', invoiceFile);
+
+        try {
+          await api.post(
+            `/returns/${response.data.id}/invoice`,
+            formData,
+          );
+        } catch (uploadError) {
+          await loadData();
+
+          setError(
+            `İade kaydı oluşturuldu, ancak fatura dosyası yüklenemedi: ${getErrorMessage(
+              uploadError,
+            )}`,
+          );
+          return true;
+        }
+      }
+
       await loadData();
-      setMessage('Ürünler iade bekleyen stoğa taşındı.');
+
+      setMessage(
+        invoiceFile
+          ? 'İade kaydı oluşturuldu ve fatura dosyası yüklendi.'
+          : 'İade kaydı oluşturuldu.',
+      );
       return true;
     } catch (createError) {
       setError(getErrorMessage(createError));

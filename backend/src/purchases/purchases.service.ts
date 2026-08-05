@@ -38,7 +38,6 @@ export class PurchasesService {
 
     return this.prisma.$transaction(async (tx) => {
       let subtotal = 0;
-      let discountTotal = 0;
 
       const purchaseNo = await generateDocumentNumber(tx, 'PURCHASE');
 
@@ -54,31 +53,18 @@ export class PurchasesService {
         }
 
         const unitPrice = Number(item.unitPrice);
-        const discount = Number(item.discount ?? 0);
-        const grossLineTotal = unitPrice * item.quantity;
+        const lineTotal = unitPrice * item.quantity;
 
-        if (discount > grossLineTotal) {
-          throw new BadRequestException(
-            `İndirim, satır toplamını geçemez. ProductId=${item.productId}`,
-          );
-        }
-
-        subtotal += grossLineTotal;
-        discountTotal += discount;
+        subtotal += lineTotal;
       }
 
-      if (discountTotal > subtotal) {
-        throw new BadRequestException('Toplam indirim, toplam tutarı geçemez');
-      }
-
-      const grandTotal = subtotal - discountTotal;
+      const grandTotal = subtotal;
 
       const purchase = await tx.purchase.create({
         data: {
           purchaseNo,
           paymentType: dto.paymentType,
           subtotal,
-          discountTotal,
           grandTotal,
           note: dto.note,
           userId,
@@ -88,8 +74,7 @@ export class PurchasesService {
 
       for (const item of dto.items) {
         const unitPrice = Number(item.unitPrice);
-        const discount = Number(item.discount ?? 0);
-        const lineTotal = unitPrice * item.quantity - discount;
+        const lineTotal = unitPrice * item.quantity;
 
         await tx.purchaseItem.create({
           data: {
@@ -97,7 +82,6 @@ export class PurchasesService {
             productId: item.productId,
             quantity: item.quantity,
             unitPrice,
-            discount,
             lineTotal,
           },
         });

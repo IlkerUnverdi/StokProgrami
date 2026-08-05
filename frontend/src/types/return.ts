@@ -33,6 +33,10 @@ export type ReturnDocument = {
   type: ReturnType;
   status: ReturnStatus;
   note?: string | null;
+  returnInvoiceNo?: string | null;
+  returnInvoiceDate?: string | null;
+  returnInvoiceFileUrl?: string | null;
+  returnInvoiceFileName?: string | null;
   createdAt: string;
   completedAt?: string | null;
   currentAccountId: number;
@@ -41,12 +45,6 @@ export type ReturnDocument = {
   sourceSale?: {
     id: number;
     saleNo: string;
-    createdAt: string;
-  } | null;
-  sourcePurchaseId?: number | null;
-  sourcePurchase?: {
-    id: number;
-    purchaseNo: string;
     createdAt: string;
   } | null;
   items: ReturnItem[];
@@ -71,7 +69,8 @@ export type DraftSupplierReturnItem = DraftReturnItem;
 export type CreateSupplierReturnPayload = {
   type: SupplierReturnType;
   currentAccountId: number;
-  sourcePurchaseId: number;
+  returnInvoiceNo?: string;
+  returnInvoiceDate?: string;
   note?: string;
   items: DraftSupplierReturnItem[];
 };

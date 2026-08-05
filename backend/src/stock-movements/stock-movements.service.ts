@@ -70,7 +70,6 @@ export class StockMovementsService {
             userId,
             paymentType: 'ON_ACCOUNT',
             subtotal: lineTotal,
-            discountTotal: 0,
             grandTotal: lineTotal,
             note: [
               dto.reference ? `Referans: ${dto.reference}` : null,
@@ -87,7 +86,6 @@ export class StockMovementsService {
             productId: dto.productId,
             quantity: dto.quantity,
             unitPrice: unitCost,
-            discount: 0,
             lineTotal,
           },
         });

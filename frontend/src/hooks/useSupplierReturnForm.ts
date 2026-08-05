@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-
 import type { ProductListItem } from '@/types/product';
 import type {
   CreateSupplierReturnPayload,
@@ -11,7 +10,10 @@ import type {
 
 type UseSupplierReturnFormParams = {
   products: ProductListItem[];
-  createReturn: (payload: CreateSupplierReturnPayload) => Promise<boolean>;
+  createReturn: (
+    payload: CreateSupplierReturnPayload,
+    invoiceFile?: File | null,
+  ) => Promise<boolean>;
 };
 
 export function useSupplierReturnForm({
@@ -19,10 +21,12 @@ export function useSupplierReturnForm({
   createReturn,
 }: UseSupplierReturnFormParams) {
   const [supplierId, setSupplierId] = useState('');
-  const [sourcePurchaseId, setSourcePurchaseId] = useState('');
   const [returnType, setReturnType] =
     useState<SupplierReturnType>('DEFECTIVE_RETURN');
   const [selectedProductId, setSelectedProductId] = useState('');
+  const [returnInvoiceNo, setReturnInvoiceNo] = useState('');
+  const [returnInvoiceDate, setReturnInvoiceDate] = useState('');
+  const [returnInvoiceFile, setReturnInvoiceFile] = useState<File | null>(null);
   const [quantity, setQuantity] = useState('1');
   const [itemNote, setItemNote] = useState('');
   const [returnNote, setReturnNote] = useState('');
@@ -85,11 +89,6 @@ export function useSupplierReturnForm({
       return;
     }
 
-    if (!sourcePurchaseId) {
-      setFormError('Kaynak alış seçin.');
-      return;
-    }
-
     if (draftItems.length === 0) {
       setFormError('İade listesine en az bir ürün ekleyin.');
       return;
@@ -98,25 +97,34 @@ export function useSupplierReturnForm({
     const created = await createReturn({
       type: returnType,
       currentAccountId: Number(supplierId),
-      sourcePurchaseId: Number(sourcePurchaseId),
+      returnInvoiceNo: returnInvoiceNo.trim() || undefined,
+      returnInvoiceDate: returnInvoiceDate || undefined,
       note: returnNote.trim() || undefined,
       items: draftItems,
-    });
+    },
+    returnInvoiceFile,
+  );
 
     if (created) {
       setDraftItems([]);
       setReturnNote('');
-      setSourcePurchaseId('');
+      setReturnInvoiceNo('');
+      setReturnInvoiceDate('');
+      setReturnInvoiceFile(null);
     }
   }
 
   return {
     supplierId,
     setSupplierId,
-    sourcePurchaseId,
-    setSourcePurchaseId,
+    returnInvoiceNo,
+    setReturnInvoiceNo,
+    returnInvoiceDate,
+    setReturnInvoiceDate,
+    returnInvoiceFile,
+    setReturnInvoiceFile,
     returnType,
-    setReturnType,
+    setReturnType,  
     selectedProductId,
     setSelectedProductId,
     selectedProduct,

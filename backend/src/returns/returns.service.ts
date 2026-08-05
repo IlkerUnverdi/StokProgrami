@@ -7,6 +7,13 @@ import { generateDocumentNumber } from '../common/document-number';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReturnDto } from './dto/create-return.dto';
 
+type ReturnInvoiceFile = {
+  filename: string;
+  originalname: string;
+  mimetype: string;
+  size: number;
+};
+
 @Injectable()
 export class ReturnsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -22,7 +29,6 @@ export class ReturnsService {
 
     const currentAccountId = dto.currentAccountId;
     const sourceSaleId = dto.sourceSaleId;
-    const sourcePurchaseId = dto.sourcePurchaseId;
 
     if (!currentAccountId) {
       throw new BadRequestException('Bu iade tipi için cari seçilmelidir');
@@ -59,12 +65,6 @@ export class ReturnsService {
         );
       }
 
-      if (!isCustomerReturn && !sourcePurchaseId) {
-        throw new BadRequestException(
-          'Tedarikçi iadesi için kaynak alış seçilmelidir',
-        );
-      }
-
       const sourceSale =
         isCustomerReturn && sourceSaleId
           ? await tx.sale.findUnique({
@@ -83,28 +83,6 @@ export class ReturnsService {
       ) {
         throw new BadRequestException(
           'Seçilen satış bu müşteriye ait değil veya bulunamadı',
-        );
-      }
-
-      const sourcePurchase =
-        !isCustomerReturn && sourcePurchaseId
-          ? await tx.purchase.findUnique({
-              where: {
-                id: sourcePurchaseId,
-              },
-              include: {
-                items: true,
-              },
-            })
-          : null;
-
-      if (
-        !isCustomerReturn &&
-        (!sourcePurchase ||
-          sourcePurchase.currentAccountId !== currentAccountId)
-      ) {
-        throw new BadRequestException(
-          'Seçilen alış bu tedarikçiye ait değil veya bulunamadı',
         );
       }
 
@@ -136,33 +114,6 @@ export class ReturnsService {
         ]),
       );
 
-      const previousSupplierReturnQuantities =
-        !isCustomerReturn && sourcePurchase
-          ? await tx.returnItem.groupBy({
-              by: ['productId'],
-              where: {
-                productId: {
-                  in: productIds,
-                },
-                return: {
-                  sourcePurchaseId: sourcePurchase.id,
-                  status: {
-                    not: 'CANCELLED',
-                  },
-                },
-              },
-              _sum: {
-                quantity: true,
-              },
-            })
-          : [];
-      const previousSupplierReturnQuantityByProductId = new Map(
-        previousSupplierReturnQuantities.map((item) => [
-          item.productId,
-          item._sum.quantity ?? 0,
-        ]),
-      );
-
       const returnNo = await generateDocumentNumber(tx, 'RETURN');
       const returnDoc = await tx.return.create({
         data: {
@@ -170,10 +121,13 @@ export class ReturnsService {
           type: dto.type,
           status: isCustomerReturn ? 'COMPLETED' : 'PENDING',
           note: dto.note?.trim() || null,
+          returnInvoiceNo: dto.returnInvoiceNo?.trim() || null,
+          returnInvoiceDate: dto.returnInvoiceDate
+            ? new Date(dto.returnInvoiceDate)
+            : null,
           userId,
           currentAccountId,
           sourceSaleId: sourceSale?.id,
-          sourcePurchaseId: sourcePurchase?.id,
           completedAt: isCustomerReturn ? new Date() : null,
         },
       });
@@ -217,28 +171,13 @@ export class ReturnsService {
 
           unitPrice = Number(sourceSaleItem.unitPrice);
         } else {
-          const sourcePurchaseItem = sourcePurchase?.items.find(
-            (purchaseItem) => purchaseItem.productId === item.productId,
-          );
-
-          if (!sourcePurchaseItem) {
+          if (product.lastPurchasePrice === null) {
             throw new BadRequestException(
-              `${product.name} seçilen alışta bulunmuyor`,
+              `${product.name} için son alış fiyatı bulunamadı`,
             );
           }
 
-          const previouslyReturned =
-            previousSupplierReturnQuantityByProductId.get(item.productId) ?? 0;
-          const returnableQuantity =
-            sourcePurchaseItem.quantity - previouslyReturned;
-
-          if (item.quantity > returnableQuantity) {
-            throw new BadRequestException(
-              `${product.name} için en fazla ${returnableQuantity} adet iade edilebilir`,
-            );
-          }
-
-          unitPrice = Number(sourcePurchaseItem.unitPrice);
+          unitPrice = Number(product.lastPurchasePrice);
         }
 
         const lineTotal = unitPrice * item.quantity;
@@ -345,13 +284,6 @@ export class ReturnsService {
             select: {
               id: true,
               saleNo: true,
-              createdAt: true,
-            },
-          },
-          sourcePurchase: {
-            select: {
-              id: true,
-              purchaseNo: true,
               createdAt: true,
             },
           },
@@ -488,13 +420,6 @@ export class ReturnsService {
               createdAt: true,
             },
           },
-          sourcePurchase: {
-            select: {
-              id: true,
-              purchaseNo: true,
-              createdAt: true,
-            },
-          },
           items: {
             include: {
               product: true,
@@ -591,13 +516,6 @@ export class ReturnsService {
               createdAt: true,
             },
           },
-          sourcePurchase: {
-            select: {
-              id: true,
-              purchaseNo: true,
-              createdAt: true,
-            },
-          },
           items: {
             include: {
               product: true,
@@ -605,6 +523,30 @@ export class ReturnsService {
           },
         },
       });
+    });
+  }
+
+  async attachInvoiceFile(id: number, file: ReturnInvoiceFile) {
+    const returnDoc = await this.prisma.return.findUnique({
+      where: {
+        id,
+      },
+    });
+
+    if (!returnDoc) {
+      throw new NotFoundException('İade bulunamadı');
+    }
+
+    if (returnDoc.type === 'CUSTOMER_RETURN') {
+      throw new BadRequestException('Müşteri iadelerine fatura eklenemez');
+    }
+
+    return this.prisma.return.update({
+      where: { id },
+      data: {
+        returnInvoiceFileUrl: `/uploads/return-invoices/${file.filename}`,
+        returnInvoiceFileName: file.originalname,
+      },
     });
   }
 
@@ -628,13 +570,6 @@ export class ReturnsService {
           select: {
             id: true,
             saleNo: true,
-            createdAt: true,
-          },
-        },
-        sourcePurchase: {
-          select: {
-            id: true,
-            purchaseNo: true,
             createdAt: true,
           },
         },
@@ -669,13 +604,6 @@ export class ReturnsService {
           select: {
             id: true,
             saleNo: true,
-            createdAt: true,
-          },
-        },
-        sourcePurchase: {
-          select: {
-            id: true,
-            purchaseNo: true,
             createdAt: true,
           },
         },

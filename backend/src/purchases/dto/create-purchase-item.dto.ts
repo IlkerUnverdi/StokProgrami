@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsNumber, IsOptional, IsPositive, Min } from 'class-validator';
+import { IsInt, IsNumber, IsPositive } from 'class-validator';
 
 export class CreatePurchaseItemDto {
   @Type(() => Number)
@@ -16,10 +16,4 @@ export class CreatePurchaseItemDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
   unitPrice!: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  discount?: number;
 }

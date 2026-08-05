@@ -12,7 +12,10 @@ type SupplierReturnFormProps = {
   products: ProductListItem[];
   suppliers: CurrentAccount[];
   savingAction: string;
-  createReturn: (payload: CreateSupplierReturnPayload) => Promise<boolean>;
+  createReturn: (
+    payload: CreateSupplierReturnPayload,
+    invoiceFile?: File | null
+  ) => Promise<boolean>;
 };
 
 export function SupplierReturnForm({
@@ -24,6 +27,12 @@ export function SupplierReturnForm({
   const {
     supplierId,
     setSupplierId,
+    returnInvoiceNo,
+    setReturnInvoiceNo,
+    returnInvoiceDate,
+    setReturnInvoiceDate,
+    returnInvoiceFile,
+    setReturnInvoiceFile,
     returnType,
     setReturnType,
     selectedProductId,
@@ -65,6 +74,52 @@ export function SupplierReturnForm({
           </select>
         </label>
 
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <label className="block text-sm font-medium text-neutral-700">
+            İade Fatura No
+            <input
+              type="text"
+              value={returnInvoiceNo}
+              onChange={(event) => setReturnInvoiceNo(event.target.value)}
+              placeholder="Varsa iade faturası numarası"
+              className="mt-2 h-11 w-full rounded-xl border border-neutral-300 px-3 outline-none focus:border-red-600 disabled:bg-neutral-100"
+            />
+          </label>
+
+          <label className="block text-sm font-medium text-neutral-700">
+            İade Fatura Tarihi
+            <input
+              type="date"
+              value={returnInvoiceDate}
+              onChange={(event) => setReturnInvoiceDate(event.target.value)}
+              className="mt-2 h-11 w-full rounded-xl border border-neutral-300 px-3 outline-none focus:border-red-600 disabled:bg-neutral-100"
+            />
+          </label>
+
+          <label className="block text-sm font-medium text-neutral-700">
+            İade Fatura Dosyası
+            <input
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+              onChange={(event) => {
+                const file = event.target.files?.[0] || null;
+                setReturnInvoiceFile(file);
+              }}
+              className="mt-2 h-11 w-full rounded-xl border border-neutral-300 px-3 outline-none focus:border-red-600 disabled:bg-neutral-100"
+            />
+
+            <span className="mt-1 block text-xs text-neutral-500">
+              PDF, JPG veya PNG • Maksimum 10 MB
+            </span>
+
+            {returnInvoiceFile ? (
+              <span className="mt-1 block text-xs text-neutral-700">
+                Seçilen dosya: {returnInvoiceFile.name}
+              </span>
+            ) : null}
+          </label>
+        </div>
+
         <label className="block text-sm font-medium text-neutral-700">
           İade Nedeni
           <select
@@ -89,7 +144,8 @@ export function SupplierReturnForm({
             onChange={(event) => setSelectedProductId(event.target.value)}
             className="mt-2 h-11 w-full rounded-xl border border-neutral-300 px-3 outline-none focus:border-red-600 disabled:bg-neutral-100"
           >
-            <option value="">Ürün seçin</option>
+            <option value="">Ürün seçin
+            </option>
             {products.map((product) => (
               <option key={product.id} value={product.id}>
                 {product.name} • Satılabilir: {product.currentStock ?? 0}
